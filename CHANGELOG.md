@@ -4,6 +4,14 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-16
+### Added
+- Blackbook now speaks fifteen languages: English, Chinese (Simplified), Spanish, French, Portuguese, Russian, Indonesian, German, Japanese, Turkish, Vietnamese, Korean, Italian, Polish and Ukrainian. Pick one from the language list on the Settings tab or in the setup wizard, or with `/bb lang <code>`. "Automatic" follows your game's language where there is a matching translation.
+- These are the most spoken languages that the game can display. Hindi, Arabic, Bengali and Urdu are left out because the game has no font for those scripts.
+
+### Note
+- Apart from English and German, the translations were produced by machine and have not been checked by native speakers, so some wording may be stiff or wrong. Corrections are welcome.
+
 ## [0.9.0] - 2026-11-16
 ### Changed
 - A new modern look for every window: a flat dark panel with a thin border, a title bar with a gold line, and calm grey text. The list window, the editor, the setup wizard and all their tabs use it.

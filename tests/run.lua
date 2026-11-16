@@ -3265,6 +3265,100 @@ Group("Flat widgets", function()
   CreateFrame = savedCreate
 end)
 
+-- --- Localization: all fifteen languages, each complete and well formed ---------------------------------
+
+Group("All languages", function()
+  local EXPECTED = { "en", "zh", "es", "fr", "pt", "ru", "id", "de", "ja", "tr", "vi", "ko", "it", "pl", "uk" }
+
+  -- The language files in the order the TOC loads them.
+  local toc = assert(io.open(root .. "/Blackbook/Blackbook.toc", "rb"))
+  local tocText = toc:read("*a")
+  toc:close()
+  local files = {}
+  for file in tocText:gmatch("(Locale/[%w]+%.lua)") do
+    if file ~= "Locale/Locale.lua" then files[#files + 1] = file end
+  end
+  EQ(#files, 15, "the TOC loads fifteen language files")
+
+  -- Load the whole set into a table of its own, exactly as the client does.
+  local all = {}
+  assert(loadfile(root .. "/Blackbook/Locale/Locale.lua"))("Blackbook", all)
+  for _, file in ipairs(files) do assert(loadfile(root .. "/Blackbook/" .. file))("Blackbook", all) end
+  EQ(table.concat(all.Locale.Order, ","), table.concat(EXPECTED, ","), "the languages, in the order they are offered")
+
+  local en = all.Locale.Tables.en
+  local function Specifiers(text)
+    local list = {}
+    for spec in text:gmatch("%%[sd]") do list[#list + 1] = spec end
+    return table.concat(list, " ")
+  end
+
+  for _, code in ipairs(EXPECTED) do
+    local text = all.Locale.Tables[code]
+    local name = all.Locale.Names[code]
+    OK(type(name) == "string" and name ~= "", code .. " has a name in its own language")
+    if code ~= "en" then
+      local missing, wrong, blank, untranslated = {}, {}, {}, 0
+      for key, english in pairs(en) do
+        local own = rawget(text, key)
+        if own == nil then
+          missing[#missing + 1] = key
+        else
+          if type(own) ~= "string" or own == "" then blank[#blank + 1] = key end
+          if Specifiers(english) ~= Specifiers(own) then wrong[#wrong + 1] = key end
+          if own == english then untranslated = untranslated + 1 end
+        end
+      end
+      table.sort(missing)
+      table.sort(wrong)
+      EQ(table.concat(missing, ","), "", code .. " translates every key")
+      EQ(table.concat(wrong, ","), "", code .. " takes the same format arguments as English")
+      EQ(#blank, 0, code .. " has no empty text")
+      -- Names of commands, "OK" and a handful of labels can stay the same; a language
+      -- where much of the text equals English was probably not translated.
+      OK(untranslated < 25, code .. " is translated, not copied from English (" .. untranslated .. " identical)")
+      -- Commands the player types must survive translation untouched.
+      for _, command in ipairs({ "/bb help", "/bb check", "/bb setup", "/bb test", "/bb lang", "/bb version" }) do
+        local key = ({ ["/bb help"] = "MSG_LOADED", ["/bb check"] = "HELP_CHECK", ["/bb setup"] = "HELP_SETUP",
+          ["/bb test"] = "HELP_TEST", ["/bb lang"] = "HELP_LANG", ["/bb version"] = "HELP_VERSION" })[command]
+        OK(text[key]:find(command, 1, true) ~= nil, code .. " keeps the command " .. command)
+      end
+      OK(text.HELP_TEST:find("<ignore|warn|notice>", 1, true) ~= nil, code .. " keeps the words of the test command")
+      OK(text.ERR_CODE_FORMAT:find("BK1", 1, true) ~= nil, code .. " still names the code prefix BK1")
+      OK(text.COMM_DISCLOSURE:find("\n", 1, true) ~= nil, code .. " keeps the line breaks of the notice")
+      -- Valid UTF-8 throughout (Lua 5.1 has no utf8 library, so only checked where it exists).
+      if utf8 then
+        local bad = {}
+        for key, value in pairs(text) do
+          if type(value) == "string" and not utf8.len(value) then bad[#bad + 1] = key end
+        end
+        EQ(#bad, 0, code .. " is valid UTF-8")
+      end
+    end
+  end
+
+  -- The window titles of the picker can be told apart, and automatic follows the client.
+  local seen = {}
+  for _, code in ipairs(EXPECTED) do
+    local name = all.Locale.Names[code]
+    OK(not seen[name], "the language name " .. name .. " is unique")
+    seen[name] = true
+  end
+  local saved = GetLocale
+  for client, expected in pairs({ deDE = "de", frFR = "fr", esES = "es", esMX = "es", ptBR = "pt", ruRU = "ru",
+    koKR = "ko", zhCN = "zh", itIT = "it", enUS = "en", enGB = "en" }) do
+    GetLocale = function() return client end
+    EQ(all.Locale.Resolve("auto"), expected, "a " .. client .. " client gets " .. expected)
+  end
+  GetLocale = function() return "plPL" end
+  EQ(all.Locale.Resolve("auto"), "en", "a client language with no WoW locale of its own is chosen by hand, English until then")
+  GetLocale = saved
+  EQ(all.Locale.Resolve("tr"), "tr", "every language can be chosen by hand")
+
+  -- A language is only as complete as its text: any gap falls back to English.
+  EQ(#all.Locale.List(), 15, "the picker offers fifteen languages")
+end)
+
 -- --- Summary -------------------------------------------------------------------
 
 io.write(string.format("%d checks, %d failure(s)\n", checks, failures))

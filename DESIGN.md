@@ -106,8 +106,7 @@ Files inside `Blackbook/` (load order = TOC order):
 ```
 Blackbook.toc
 Locale/Locale.lua      -- language registry and the immediate switch (loads first)
-Locale/enUS.lua
-Locale/deDE.lua
+Locale/enUS.lua ... Locale/ukUA.lua   -- the fifteen languages, one file each (section 10)
 Core/Const.lua         -- names, prefixes, limits, label table, tier tables (pure)
 Core/Events.lua        -- ns.Events:On(name, fn), :Fire(name, ...) (pure)
 Core/Safe.lua          -- secret-value guards (see below)
@@ -492,6 +491,9 @@ Keep the layout simple and uniform; use `Widgets.lua` helpers (checkbox, radio g
 - **A language change takes effect at once, with no `/reload`.** `Locale.Set(choice)` saves the choice, swaps `ns.L` and runs the registered hooks; the main window, the editor and the wizard throw their frames away and are rebuilt in the new language (the wizard reopens on the same page and the window on the same tab). Frames are rebuilt rather than relabelled because a text-to-key lookup is ambiguous (two keys can share one translation). A rebuilt window gets a new global name (`Widgets.FrameName`). Anything typed but not saved in a rebuilt window is lost, which is acceptable for a rare action.
 - The language pickers (Settings tab, wizard) are one `Widgets.Choice`: a dropdown with radio entries, or a grid of checkboxes if the client has no dropdown. They list *Automatic* and then every registered language under its own name, so adding a language needs no UI change.
 - Characters outside the client's fonts cannot be shown. Latin, Cyrillic and Chinese/Japanese/Korean render on current clients; Arabic, Hindi, Bengali and Urdu scripts do not.
+- **The fifteen languages**, in the order the picker lists them: English, Chinese (Simplified), Spanish, French, Portuguese, Russian, Indonesian, German, Japanese, Turkish, Vietnamese, Korean, Italian, Polish and Ukrainian. They are the world's most spoken languages that the client can display; Hindi, Arabic, Bengali, Urdu and Marathi would rank higher than some of these but have no glyphs in any WoW font (and Arabic and Urdu need right-to-left text), so they are left out. Chinese, Japanese and Korean use the client's standard font; the others use the addon's sans-serif font.
+- **Machine translation.** Apart from English and German, every language file is machine-translated and has not been reviewed by a native speaker; its header says so. A native speaker can improve a language by editing that one file. A test checks each language for completeness (every key), identical format arguments (`%s`, `%d`), kept command words (`/bb ...`), unchanged `BK1`, valid UTF-8, and that it was not simply copied from English.
+- A language with no WoW locale of its own (Indonesian, Turkish, Vietnamese, Polish, Ukrainian) is never chosen by "automatic"; the player picks it by hand.
 - Format strings use `%s` and `%d`. Escape `|` as `||` whenever user text is placed into chat or tooltips.
 
 ---
@@ -568,6 +570,7 @@ For each delivery, the reviewer checks:
 - **Guild broadcast reaches everyone in the guild who runs the addon**, including members who never agreed to anything; they only receive hashes and tokens, and only store them if they opted in to receiving from the guild.
 - **Retraction trust.** Anyone who has seen a token can retract it from the source it came from. The effect is limited to that source and to one report.
 - **`C_EncodingUtil` signatures** are assumed (`CompressString(text)` returning a string, `DecompressString(text)`); the code verifies the round trip and falls back to the raw code, but a client where compression works differently simply never produces `BK1C` codes.
+- **Vietnamese** needs stacked diacritics; if the addon's sans-serif font lacks them, those letters will not display and the player should choose another language until the font is changed.
 - **Scroll frame template.** `UIPanelScrollFrameTemplate` is assumed for the code boxes; without it they fall back to a single-line edit box.
 
 ---
