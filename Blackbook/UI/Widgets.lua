@@ -3,6 +3,8 @@
 -- caller can disable just that feature (section 2 fallback policy).
 local _, ns = ...
 
+local Theme = ns.Theme
+
 local Widgets = {}
 ns.Widgets = Widgets
 
@@ -23,8 +25,10 @@ function Widgets.FrameName(base)
   return base .. nameCount[base]
 end
 
+-- Text. fontObject is a Blizzard font name; it is mapped to the matching font of
+-- the addon's own look (Theme.Font). Plain "GameFontNormal" text is a heading.
 function Widgets.Label(parent, text, fontObject)
-  local label = parent:CreateFontString(nil, "ARTWORK", fontObject or "GameFontNormal")
+  local label = parent:CreateFontString(nil, "ARTWORK", Theme.Font(fontObject or "GameFontNormal"))
   label:SetText(text or "")
   return label
 end
@@ -39,22 +43,118 @@ function Widgets.SetEnabled(frame, enabled)
   end
 end
 
--- Checkbox with a text label. onClick(check) runs after the box toggles.
-function Widgets.Checkbox(parent, text, onClick)
-  local check = Widgets.Create("CheckButton", "UICheckButtonTemplate", parent)
-  if not check then return nil end
-  if check.Text then
-    check.Text:SetText(text)
-  elseif type(check.SetText) == "function" then
-    check:SetText(text)
-  else
-    local label = check:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    label:SetPoint("LEFT", check, "RIGHT", 4, 0)
-    label:SetText(text)
+-- A window in the addon's own style: a dark panel with a thin border, a title bar
+-- with a gold line on top and a close button. Movable by its title and clamped to
+-- the screen. Returns the frame, which has :SetTitle(text), or nil.
+function Widgets.Window(name, width, height, title)
+  local frame = Widgets.Create("Frame", nil, UIParent, name)
+  if not frame then return nil end
+  frame.role = "window"
+  frame:SetSize(width, height)
+  frame:SetPoint("CENTER")
+  frame:SetClampedToScreen(true)
+  frame:SetFrameStrata("DIALOG") -- above other addons' HUD frames
+  frame:SetToplevel(true)
+  frame:SetMovable(true)
+  frame:EnableMouse(true)
+  frame:RegisterForDrag("LeftButton")
+  frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+  frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+
+  local color = Theme.color
+  Theme.Fill(frame, color.window)
+  local bar = frame:CreateTexture(nil, "BORDER")
+  bar:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+  bar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -1, -1)
+  bar:SetHeight(28)
+  bar:SetColorTexture(Theme.Unpack(color.titlebar))
+  local line = frame:CreateTexture(nil, "ARTWORK")
+  line:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+  line:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -1, -1)
+  line:SetHeight(2)
+  line:SetColorTexture(Theme.Unpack(color.accent))
+  Theme.Border(frame, color.border)
+
+  frame.titleText = frame:CreateFontString(nil, "OVERLAY", Theme.Font("GameFontNormal"))
+  frame.titleText:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -8)
+  frame.titleText:SetText(title or "")
+  frame.SetTitle = function(self, text) self.titleText:SetText(text or "") end
+
+  local close = Widgets.Button(frame, "\195\151", 28, function() frame:Hide() end, "ghost")
+  if close then
+    close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -1, -1)
+    close:SetHeight(28)
+    frame.CloseButton = close
   end
+  return frame
+end
+
+-- Checkbox with a text label: a small dark box that fills with the accent colour
+-- when ticked. The label is clickable too. onClick(check) runs after it toggles.
+function Widgets.Checkbox(parent, text, onClick)
+  local check = Widgets.Create("CheckButton", nil, parent)
+  if not check then return nil end
+  check.role = "checkbox"
+  check:SetSize(20, 20)
+
+  local color = Theme.color
+  local outline = check:CreateTexture(nil, "BACKGROUND")
+  outline:SetPoint("LEFT", check, "LEFT", 0, 0)
+  outline:SetSize(18, 18)
+  outline:SetColorTexture(Theme.Unpack(color.border))
+  local inner = check:CreateTexture(nil, "BORDER")
+  inner:SetPoint("CENTER", outline, "CENTER", 0, 0)
+  inner:SetSize(16, 16)
+  inner:SetColorTexture(Theme.Unpack(color.field))
+  local mark = check:CreateTexture(nil, "ARTWORK")
+  mark:SetPoint("CENTER", outline, "CENTER", 0, 0)
+  mark:SetSize(10, 10)
+  mark:SetColorTexture(Theme.Unpack(color.accent))
+  local label = check:CreateFontString(nil, "OVERLAY", Theme.Font("GameFontHighlight"))
+  label:SetPoint("LEFT", check, "LEFT", 26, 0)
+  check.label = label
+
+  local state = { enabled = true }
+  local nativeSetChecked = check.SetChecked
+  local function Sync()
+    if check:GetChecked() then mark:Show() else mark:Hide() end
+  end
+  local function Paint()
+    local textColor = state.enabled and color.text or color.off
+    label:SetTextColor(Theme.Unpack(textColor))
+    outline:SetColorTexture(Theme.Unpack(state.enabled and color.border or color.buttonOff))
+  end
+  check.SetChecked = function(self, value)
+    nativeSetChecked(self, value)
+    Sync()
+  end
+  check.SetText = function(self, value)
+    self.text = value
+    label:SetText(value or "")
+    -- Make the label part of the click area.
+    local width = type(label.GetStringWidth) == "function" and label:GetStringWidth() or nil
+    if type(width) == "number" and type(self.SetHitRectInsets) == "function" then
+      self:SetHitRectInsets(0, -(width + 8), 0, 0)
+    end
+  end
+  check.GetText = function(self) return self.text or "" end
+  check.SetEnabled = function(self, value)
+    state.enabled = value and true or false
+    self.enabled = state.enabled
+    if state.enabled then self:Enable() else self:Disable() end
+    Paint()
+  end
+  check:SetScript("OnEnter", function()
+    if state.enabled then outline:SetColorTexture(Theme.Unpack(color.accent)) end
+  end)
+  check:SetScript("OnLeave", Paint)
   check:SetScript("OnClick", function(self)
+    Sync()
     if onClick then onClick(self) end
   end)
+  check:SetText(text)
+  Paint()
+  Sync()
   return check
 end
 
@@ -87,13 +187,21 @@ function Widgets.RadioGroup(parent, options, onChange)
   return group
 end
 
--- Single-line text box using the standard input template.
+-- Single-line text box: a dark field with a thin border that turns to the
+-- accent colour while it has the cursor.
 function Widgets.InputBox(parent, width, maxLetters, onChange)
-  local box = Widgets.Create("EditBox", "InputBoxTemplate", parent)
+  local box = Widgets.Create("EditBox", nil, parent)
   if not box then return nil end
-  box:SetSize(width, 20)
+  box.role = "input"
+  box:SetSize(width, 26)
   box:SetAutoFocus(false)
   box:SetMaxLetters(maxLetters)
+  box:SetFontObject(Theme.Font("GameFontHighlight"))
+  box:SetTextInsets(8, 8, 0, 0)
+  Theme.Fill(box, Theme.color.field)
+  local border = Theme.Border(box, Theme.color.border)
+  box:SetScript("OnEditFocusGained", function() border.SetColor(Theme.color.accent) end)
+  box:SetScript("OnEditFocusLost", function() border.SetColor(Theme.color.border) end)
   box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
   box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
   box:SetScript("OnTextChanged", function()
@@ -102,23 +210,25 @@ function Widgets.InputBox(parent, width, maxLetters, onChange)
   return box
 end
 
--- Multi-line text area on a dark background. Returns the container frame; the
--- edit box is container.edit.
+-- Multi-line text area on a dark field with a thin border. Returns the container
+-- frame; the edit box is container.edit.
 function Widgets.TextArea(parent, width, height, maxLetters, onChange)
   local container = Widgets.Create("Frame", nil, parent)
   local edit = Widgets.Create("EditBox", nil, container)
   if not container or not edit then return nil end
   container:SetSize(width, height)
-  local background = container:CreateTexture(nil, "BACKGROUND")
-  background:SetAllPoints(container)
-  background:SetColorTexture(0, 0, 0, 0.5)
+  Theme.Fill(container, Theme.color.field)
+  local border = Theme.Border(container, Theme.color.border)
+  edit.role = "textedit"
   edit:SetMultiLine(true)
   edit:SetAutoFocus(false)
   edit:SetMaxLetters(maxLetters)
-  if ChatFontNormal then edit:SetFontObject(ChatFontNormal) end
-  edit:SetPoint("TOPLEFT", container, "TOPLEFT", 6, -6)
-  edit:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -6, 6)
-  edit:SetWidth(width - 12)
+  edit:SetFontObject(Theme.Font("GameFontHighlight"))
+  edit:SetPoint("TOPLEFT", container, "TOPLEFT", 8, -8)
+  edit:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, 8)
+  edit:SetWidth(width - 16)
+  edit:SetScript("OnEditFocusGained", function() border.SetColor(Theme.color.accent) end)
+  edit:SetScript("OnEditFocusLost", function() border.SetColor(Theme.color.border) end)
   edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
   edit:SetScript("OnTextChanged", function()
     if onChange then onChange() end
@@ -137,9 +247,8 @@ function Widgets.CodeBox(parent, width, height, maxLetters, onChange)
   local container = Widgets.Create("Frame", nil, parent)
   if not container then return nil end
   container:SetSize(width, height)
-  local background = container:CreateTexture(nil, "BACKGROUND")
-  background:SetAllPoints(container)
-  background:SetColorTexture(0, 0, 0, 0.5)
+  Theme.Fill(container, Theme.color.field)
+  Theme.Border(container, Theme.color.border)
 
   local scroll = Widgets.Create("ScrollFrame", "UIPanelScrollFrameTemplate", container)
   local edit = Widgets.Create("EditBox", nil, scroll or container)
@@ -167,15 +276,115 @@ function Widgets.CodeBox(parent, width, height, maxLetters, onChange)
   return container
 end
 
-function Widgets.Button(parent, text, width, onClick)
-  local button = Widgets.Create("Button", "UIPanelButtonTemplate", parent)
+-- Flat button. style: nil (neutral), "primary" (gold, for the one main action of
+-- a window), "danger" (red text, for destructive actions) or "ghost" (no
+-- background until hovered, for the window's close button).
+function Widgets.Button(parent, text, width, onClick, style)
+  local button = Widgets.Create("Button", nil, parent)
   if not button then return nil end
-  button:SetSize(width, 22)
-  button:SetText(text)
+  button.role = "button"
+  button:SetSize(width, 26)
+
+  local color = Theme.color
+  local background = button:CreateTexture(nil, "BACKGROUND")
+  background:SetAllPoints(button)
+  local label = button:CreateFontString(nil, "OVERLAY", Theme.Font("GameFontHighlight"))
+  label:SetPoint("CENTER", button, "CENTER", 0, 0)
+  label:SetWidth(width - 8)
+  label:SetWordWrap(false)
+  button.label = label
+
+  local state = { hover = false, down = false, enabled = true }
+  local function Paint()
+    local fill, textColor
+    if not state.enabled then
+      fill, textColor = style == "ghost" and { 0, 0, 0, 0 } or color.buttonOff, color.off
+    elseif style == "primary" then
+      fill = state.down and color.primaryDown or (state.hover and color.primaryHover or color.primary)
+      textColor = color.primaryText
+    elseif style == "danger" then
+      fill = state.hover and color.dangerHover or color.button
+      textColor = color.danger
+    elseif style == "ghost" then
+      fill = state.hover and color.dangerHover or { 0, 0, 0, 0 }
+      textColor = state.hover and color.danger or color.muted
+    else
+      fill = state.down and color.buttonDown or (state.hover and color.buttonHover or color.button)
+      textColor = color.text
+    end
+    background:SetColorTexture(Theme.Unpack(fill))
+    label:SetTextColor(Theme.Unpack(textColor))
+  end
+  button.SetText = function(self, value)
+    self.text = value
+    label:SetText(value or "")
+  end
+  button.GetText = function(self) return self.text or "" end
+  button.SetEnabled = function(self, value)
+    state.enabled = value and true or false
+    self.enabled = state.enabled
+    if state.enabled then self:Enable() else self:Disable() end
+    if not state.enabled then state.hover, state.down = false, false end
+    Paint()
+  end
+  button:SetScript("OnEnter", function() state.hover = true Paint() end)
+  button:SetScript("OnLeave", function() state.hover, state.down = false, false Paint() end)
+  button:SetScript("OnMouseDown", function() state.down = true Paint() end)
+  button:SetScript("OnMouseUp", function() state.down = false Paint() end)
   button:SetScript("OnClick", function(self)
-    if onClick then onClick(self) end
+    if state.enabled and onClick then onClick(self) end
   end)
+  button:SetText(text)
+  Paint()
   return button
+end
+
+-- A tab: plain text with an accent line under the active one. :SetActive(on)
+-- switches it. Used by the window's tab bar.
+function Widgets.TabButton(parent, text, width, onClick)
+  local tab = Widgets.Create("Button", nil, parent)
+  if not tab then return nil end
+  tab.role = "tab"
+  tab:SetSize(width, 26)
+
+  local color = Theme.color
+  local hoverFill = tab:CreateTexture(nil, "BACKGROUND")
+  hoverFill:SetAllPoints(tab)
+  hoverFill:SetColorTexture(Theme.Unpack(color.rowHover))
+  hoverFill:Hide()
+  local underline = tab:CreateTexture(nil, "ARTWORK")
+  underline:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 6, 0)
+  underline:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -6, 0)
+  underline:SetHeight(2)
+  underline:SetColorTexture(Theme.Unpack(color.accent))
+  underline:Hide()
+  local label = tab:CreateFontString(nil, "OVERLAY", Theme.Font("GameFontHighlight"))
+  label:SetPoint("CENTER", tab, "CENTER", 0, 1)
+  label:SetWidth(width - 8)
+  label:SetWordWrap(false)
+  tab.label = label
+
+  local state = { active = false }
+  local function Paint()
+    label:SetTextColor(Theme.Unpack(state.active and color.text or color.muted))
+    if state.active then underline:Show() else underline:Hide() end
+  end
+  tab.SetText = function(self, value)
+    self.text = value
+    label:SetText(value or "")
+  end
+  tab.GetText = function(self) return self.text or "" end
+  tab.SetActive = function(self, active)
+    state.active = active and true or false
+    self.active = state.active
+    Paint()
+  end
+  tab:SetScript("OnEnter", function() if not state.active then hoverFill:Show() end end)
+  tab:SetScript("OnLeave", function() hoverFill:Hide() end)
+  tab:SetScript("OnClick", function(self) if onClick then onClick(self) end end)
+  tab:SetText(text)
+  Paint()
+  return tab
 end
 
 -- Multi-select of labelled items. items = { { id =, text = }, ... }.

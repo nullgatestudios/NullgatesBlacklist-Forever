@@ -7,6 +7,7 @@ local Const = ns.Const
 local Events = ns.Events
 local Output = ns.Output
 local Widgets = ns.Widgets
+local Theme = ns.Theme
 
 local Text, Print = Output.Text, Output.Print
 
@@ -31,34 +32,21 @@ function Manager.RegisterTab(id, titleKey, build)
   tabs[#tabs + 1] = { id = id, titleKey = titleKey, build = build }
 end
 
-local function SetTitle(target, title)
-  if type(target.SetTitle) == "function" then
-    target:SetTitle(title)
-  elseif target.TitleContainer and target.TitleContainer.TitleText then
-    target.TitleContainer.TitleText:SetText(title)
-  end
-end
-
 local function Build()
   local name = Widgets.FrameName("BlackbookManager")
-  local window = Widgets.Create("Frame", "BasicFrameTemplateWithInset", UIParent, name)
+  local window = Widgets.Window(name, 670, 520, Const.ADDON_NAME)
   if not window then return nil end
-  window:SetSize(670, 520)
-  window:SetPoint("CENTER")
-  window:SetClampedToScreen(true)
-  window:SetFrameStrata("DIALOG") -- above other addons' HUD frames
-  window:SetToplevel(true)
-  window:SetMovable(true)
-  window:EnableMouse(true)
-  window:RegisterForDrag("LeftButton")
-  window:SetScript("OnDragStart", function(self) self:StartMoving() end)
-  window:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-  SetTitle(window, Const.ADDON_NAME)
 
+  -- The tab bar: plain text tabs under the title bar, with a thin line below.
+  local divider = window:CreateTexture(nil, "ARTWORK")
+  divider:SetPoint("TOPLEFT", window, "TOPLEFT", 14, -62)
+  divider:SetPoint("TOPRIGHT", window, "TOPRIGHT", -14, -62)
+  divider:SetHeight(1)
+  divider:SetColorTexture(Theme.Unpack(Theme.color.divider))
   for index, tab in ipairs(tabs) do
-    tab.button = Widgets.Button(window, Text(tab.titleKey), TAB_WIDTH, function() Manager.Show(tab.id) end)
+    tab.button = Widgets.TabButton(window, Text(tab.titleKey), TAB_WIDTH, function() Manager.Show(tab.id) end)
     if tab.button then
-      tab.button:SetPoint("TOPLEFT", window, "TOPLEFT", 14 + (index - 1) * (TAB_WIDTH + 4), -32)
+      tab.button:SetPoint("TOPLEFT", window, "TOPLEFT", 14 + (index - 1) * (TAB_WIDTH + 4), -35)
     end
   end
 
@@ -99,7 +87,7 @@ function Manager.Show(id)
   activeId = target.id
   for _, tab in ipairs(tabs) do
     if tab.frame then tab.frame:Hide() end
-    if tab.button then Widgets.SetEnabled(tab.button, tab ~= target) end
+    if tab.button then tab.button:SetActive(tab == target) end
   end
   EnsureTab(target)
   target.frame:Show()

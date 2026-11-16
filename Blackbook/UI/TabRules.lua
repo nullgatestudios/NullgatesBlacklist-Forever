@@ -171,7 +171,7 @@ local function Build(content)
       Status(Text("RULES_ADDED"), true)
     end
     if state.verdict:GetValue() == "ignore" then Confirm(Create) else Create() end
-  end)
+  end, "primary")
   if not (state.rulesList and state.hiddenList and state.labels and state.source and state.tier
     and state.verdict and state.add) then
     return nil

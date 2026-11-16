@@ -115,7 +115,7 @@ local function Build(content)
       Editor.Open(name, "ignore")
       state.addBox:SetText("")
     end
-  end)
+  end, "primary")
   state.list = Widgets.List(content, ROW_HEIGHT, SetupRow)
   if not (state.search and state.verdictGroup and state.labels and state.addBox
     and state.addButton and state.list) then

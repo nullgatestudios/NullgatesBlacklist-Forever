@@ -53,7 +53,7 @@ Target client: `## Interface: 16001`. Player names are **two-part names** ("Firs
 | Friends and guild | `C_FriendList.GetNumFriends`, `C_FriendList.GetFriendInfoByIndex`, `GetNumGuildMembers`, `GetGuildRosterInfo`, events `FRIENDLIST_UPDATE`, `GUILD_ROSTER_UPDATE`, `BN_FRIEND_INFO_CHANGED`, `BN_FRIEND_ACCOUNT_ONLINE`, `BN_FRIEND_ACCOUNT_OFFLINE` |
 | Menus | `Menu.ModifyMenu(tag, fn)` with root description methods `CreateDivider`, `CreateTitle`, `CreateButton` |
 | Tooltip | `TooltipDataProcessor.AddTooltipPostCall` with `Enum.TooltipDataType.Unit` |
-| UI | `BasicFrameTemplateWithInset`, `UIPanelButtonTemplate`, `UICheckButtonTemplate`, `InputBoxTemplate`, `WowStyle1DropdownTemplate` (`DropdownButton`), `WowScrollBoxList`, `MinimalScrollBar`, `CreateScrollBoxListLinearView`, `ScrollUtil.InitScrollBoxListWithScrollBar`, `CreateDataProvider`, `StaticPopupDialogs` |
+| UI | plain `Frame`, `Button`, `CheckButton` and `EditBox` frames drawn with textures and font strings (no Blizzard frame templates), `CreateFont`, `WowStyle1DropdownTemplate` (`DropdownButton`), `WowScrollBoxList`, `MinimalScrollBar`, `CreateScrollBoxListLinearView`, `ScrollUtil.InitScrollBoxListWithScrollBar`, `CreateDataProvider`, `StaticPopupDialogs` |
 | Encoding | `C_EncodingUtil.CompressString` / `DecompressString` (optional; the portable code must work without them) |
 | Time and timers | `time`, `GetServerTime`, `GetTime`, `C_Timer.After`, `C_Timer.NewTicker` |
 | Metadata | `C_AddOns.GetAddOnMetadata(name, field)`, fallback to the global `GetAddOnMetadata` (used only to show the TOC version) |
@@ -134,6 +134,7 @@ Enforce/Reply.lua      -- auto-reply policy
 Display/Markers.lua    -- how each verdict looks; chat icon helper (loads before Enforce/Chat.lua)
 Display/Portrait.lua
 Display/Tooltip.lua
+UI/Theme.lua           -- colours, fonts and drawing helpers of the addon's look (loads before Widgets)
 UI/Widgets.lua
 UI/Editor.lua          -- add/edit dialog
 UI/Manager.lua         -- main window frame and tab bar; tabs register with Manager.RegisterTab
@@ -458,6 +459,14 @@ Added only after Friends and Guild are reviewed and working.
 ---
 
 ## 9. User interface
+
+### The look
+Every window uses one flat, dark style, defined in `UI/Theme.lua` and built by `Widgets` so that no tab draws its own chrome:
+- A near-black panel with a 1 pixel border; a title bar with a 2 pixel gold line on top (the gold comes from the addon icon) and a close button; calm grey text, white for what matters, gold for headings.
+- **Buttons** are flat fills that lighten on hover and darken when pressed. `primary` (gold, dark text) is for the one main action of a window (Save, Next, Confirm, Add rule, Create code, Import), `danger` (red text) for destructive ones (Revoke, Remove list), `ghost` for the close button. A disabled button looks switched off and ignores clicks.
+- **Checkboxes** are a small dark box that fills with the accent colour when ticked; the label is part of the click area. **Input boxes** are dark fields whose border turns gold while they have the cursor. **Tabs** are plain text with a gold line under the active one.
+- Only plain textures and font strings are used, so no template can be missing. Fonts are the addon's own font objects (`CreateFont`), so no other addon's text changes: the sans-serif face of the chat for Latin and Cyrillic, and the client's standard font for Chinese, Japanese and Korean, which need its glyphs. Where `CreateFont` is missing the Blizzard fonts are used.
+- Lists keep the client's thin scroll bar and dropdown menus (`WowStyle1DropdownTemplate`), which already look modern.
 
 Keep the layout simple and uniform; use `Widgets.lua` helpers (checkbox, radio group, labelled field) instead of repeating frame code.
 

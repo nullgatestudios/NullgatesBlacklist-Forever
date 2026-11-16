@@ -134,6 +134,16 @@ GameTooltip = {
   AddLine = function(self, text) self.lines[#self.lines + 1] = text end,
   Show = function() end,
 }
+-- Font objects (the addon makes its own for its look).
+function CreateFont(name)
+  local font = { name = name }
+  function font:SetFont(path, size) self.path, self.size = path, size return true end
+  function font:SetTextColor(r, g, b) self.color = { r, g, b } end
+  function font:SetFontObject() end
+  _G[name] = font
+  return font
+end
+STANDARD_TEXT_FONT = "Fonts/FRIZQT__.TTF"
 Minimap = Widget("Frame", "Minimap")
 Minimap.GetWidth = function() return 140 end
 Minimap.GetCenter = function() return 500, 400 end
@@ -392,8 +402,8 @@ end
 
 local function Parts(editorFrame)
   local parts = {}
-  parts.nameBox = Find(editorFrame, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)[1]
-  parts.comment = Find(editorFrame, function(f) return f.kind == "EditBox" and f.template == nil end)[1]
+  parts.nameBox = Find(editorFrame, function(f) return f.kind == "EditBox" and f.role == "input" end)[1]
+  parts.comment = Find(editorFrame, function(f) return f.kind == "EditBox" and f.role == "textedit" end)[1]
   parts.save = Find(editorFrame, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_SAVE end)[1]
   parts.cancel = Find(editorFrame, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1]
   local checks = Find(editorFrame, function(f) return f.kind == "CheckButton" end)
@@ -583,7 +593,7 @@ lastView.initializer(row, Box().provider.data[2])
 Equals(row.cells.name.text, "Row Two", "a recycled row shows its new record")
 
 -- search
-local inputs = Find(manager, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)
+local inputs = Find(manager, function(f) return f.kind == "EditBox" and f.role == "input" end)
 local searchBox = inputs[1]
 Type(searchBox, "two")
 Equals(Names(), "Row Two", "search narrows the list")
@@ -627,7 +637,7 @@ Equals(Names(), "Row One,Row Two", "a new column starts ascending")
 IsShiftKeyDown = function() return false end
 Click(row)
 Check(_G.CurrentBlackbookEditor:IsShown(), "clicking a row opens the editor")
-Equals(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)[1].text,
+Equals(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "EditBox" and f.role == "input" end)[1].text,
   "Row Two", "the editor shows that record")
 Click(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1])
 IsShiftKeyDown = function() return true end
@@ -645,7 +655,7 @@ local addBox = inputs[2]
 local addButton = ButtonByText(ns.L.LIST_ADD)
 addBox:SetText("Typed Name")
 Click(addButton)
-Equals(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)[1].text,
+Equals(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "EditBox" and f.role == "input" end)[1].text,
   "Typed Name", "the add box opens the editor with the typed name")
 Equals(addBox.text, "", "the add box is cleared")
 Click(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1])
@@ -804,7 +814,7 @@ do
   local codeBox, pasteBox = boxes[1], boxes[2]
   Check(Find(codeBox, function(f) return f.template == "UIPanelScrollFrameTemplate" end)[1] ~= nil,
     "the code box scrolls inside its own frame, so a long code cannot cover other widgets")
-  local inputs = Find(share, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)
+  local inputs = Find(share, function(f) return f.kind == "EditBox" and f.role == "input" end)
   local nameBox = inputs[1]
 
   Click(Button(share, ns.L.SHARE_EXPORT_BUTTON))
@@ -953,8 +963,8 @@ do
     Check(ButtonByText(ns.L[key]) ~= nil, key .. " is on the tab bar")
   end
   Equals(#Find(manager, function(f)
-    return f.kind == "Button" and f.points and f.points[1].relative == manager and f.points[1].y == -32
-  end), 7, "all seven tab buttons sit on the tab bar")
+    return f.role == "tab" and f.points and f.points[1].relative == manager
+  end), 7, "all seven tabs sit on the tab bar")
 
   -- Community tab: nothing can be switched on before the notice is confirmed.
   Click(ButtonByText(ns.L.TAB_COMMUNITY))
@@ -1145,7 +1155,7 @@ do
   Check(wizard:IsShown(), "on the first run the wizard opens")
   Equals(ns.Settings.Get("setupDone"), false, "opening it does not finish the setup")
   Equals(wizard.strata, "DIALOG", "it sits above other addons' frames")
-  Equals(wizard.template, "BasicFrameTemplateWithInset", "it uses the standard window frame")
+  Equals(wizard.role, "window", "it is a window in the addon's own style")
 
   local function ShownPages()
     local count = 0

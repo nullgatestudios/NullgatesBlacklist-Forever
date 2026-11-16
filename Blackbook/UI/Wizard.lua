@@ -53,19 +53,8 @@ end
 
 local function Build()
   local name = Widgets.FrameName("BlackbookWizard")
-  local frame = Widgets.Create("Frame", "BasicFrameTemplateWithInset", UIParent, name)
+  local frame = Widgets.Window(name, WIDTH, HEIGHT, Text("WIZ_TITLE"))
   if not frame then return nil end
-  frame:SetSize(WIDTH, HEIGHT)
-  frame:SetPoint("CENTER")
-  frame:SetClampedToScreen(true)
-  frame:SetFrameStrata("DIALOG")
-  frame:SetToplevel(true)
-  frame:SetMovable(true)
-  frame:EnableMouse(true)
-  frame:RegisterForDrag("LeftButton")
-  frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
-  frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-  SetTitle(frame, Text("WIZ_TITLE"))
 
   local state = { pages = {}, refreshers = {}, page = 1 }
 
@@ -100,7 +89,7 @@ local function Build()
   state.back = Widgets.Button(frame, Text("WIZ_BACK"), 100, function() Wizard.Go(state.page - 1) end)
   state.next = Widgets.Button(frame, Text("WIZ_NEXT"), 100, function()
     if state.page >= PAGE_COUNT then frame:Hide() else Wizard.Go(state.page + 1) end
-  end)
+  end, "primary")
   if not (welcome and ignore and reply and finish and language and hideChat and autoDecline
     and replyControl and minimap and state.back and state.next) then
     frame:Hide()

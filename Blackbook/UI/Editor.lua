@@ -29,7 +29,7 @@ end
 
 local function Build()
   local name = Widgets.FrameName("BlackbookEditor")
-  local frame = Widgets.Create("Frame", "BasicFrameTemplateWithInset", UIParent, name)
+  local frame = Widgets.Window(name, 376, 300, "")
   if not frame then return nil end
 
   local state = {}
@@ -53,7 +53,7 @@ local function Build()
   end
   state.picker = Widgets.MultiSelect(frame, items, Refresh, { summary = LabelSummary, width = 220 })
   state.area = Widgets.TextArea(frame, 336, 80, Const.Limits.comment, Refresh)
-  state.save = Widgets.Button(frame, Text("EDITOR_SAVE"), 100, function() Editor.Commit() end)
+  state.save = Widgets.Button(frame, Text("EDITOR_SAVE"), 100, function() Editor.Commit() end, "primary")
   state.cancel = Widgets.Button(frame, Text("EDITOR_CANCEL"), 100, function() frame:Hide() end)
   if not (state.nameBox and state.group and state.picker and state.area and state.save and state.cancel) then
     frame:Hide()
@@ -93,15 +93,6 @@ local function Build()
   state.cancel:SetPoint("BOTTOMLEFT", frame, "BOTTOM", 6, 14)
 
   frame:SetSize(376, y + FOOTER)
-  frame:SetPoint("CENTER")
-  frame:SetClampedToScreen(true)
-  frame:SetFrameStrata("DIALOG") -- above other addons' HUD frames; the last shown window is on top
-  frame:SetToplevel(true)
-  frame:SetMovable(true)
-  frame:EnableMouse(true)
-  frame:RegisterForDrag("LeftButton")
-  frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
-  frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
   if UISpecialFrames then tinsert(UISpecialFrames, name) end
   frame:Hide()
 

@@ -4,6 +4,13 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-16
+### Changed
+- A new modern look for every window: a flat dark panel with a thin border, a title bar with a gold line, and calm grey text. The list window, the editor, the setup wizard and all their tabs use it.
+- Buttons are flat and react to the mouse. The main action of each window is gold (Save, Next, Confirm, Add rule, Create code, Import), destructive ones have red text (Revoke and delete, Remove list), and a disabled button looks switched off.
+- Tick boxes, text fields and tabs are redrawn to match: ticked boxes fill with gold, a text field's border turns gold while you type in it, and the active tab has a gold line under it.
+- The addon uses its own sans-serif font, so none of the game's other text is affected. Chinese, Japanese and Korean will keep the game's standard font when those languages are added.
+
 ## [0.8.1] - 2026-11-16
 ### Fixed
 - On the last page of the setup wizard the Finish button showed the whole page text, which ran across the screen and over the other buttons. It now says "Finish".
