@@ -4,6 +4,17 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-16
+### Added
+- `/bb check` tests this client without needing anyone else. It lists which features Blackbook relies on (chat filter, right-click menu, tooltips, lists, dropdowns, popups, addon messages, friend list and more) and marks any that are missing. It then whispers a short message to your own character and waits for it to come back, which shows whether sharing with friends and guild can work on your client.
+- Automatic reply to whispers from players you ignore, off by default. Choose off, a short sentence, or one that names your reasons. It is sent once per player and session after a moment, in your language, never contains your comment, and the copy of it in your own chat is hidden. Only players you ignored yourself get a reply, not players flagged by an imported list or by the community. The Settings tab shows a preview of the sentence.
+- A first-run setup wizard in four short steps: language, what Ignore does, the automatic reply, and the minimap button. It opens once after login. `/bb setup` or the new button on the Settings tab opens it again. It never switches sharing on.
+
+### Changed
+- `/bb setup` now opens the wizard instead of saying it is not available.
+- Saved data is checked and repaired more thoroughly when it loads, so a damaged or very old save no longer causes errors.
+- The English and German texts are checked against each other automatically.
+
 ## [0.7.0] - 2026-11-16
 ### Added
 - Automatic, silent sharing with friends and guild. After you confirm the notice once on the new **Community** tab and switch a source on, Blackbook reports your Ignore entries in the background and receives reports from others. No popups, no prompts and no chat output. What is sent is a hash of the player's name, the reason labels, a day number and an anonymous token, never names, comments or your own name. You see exactly what would be sent with the preview button.

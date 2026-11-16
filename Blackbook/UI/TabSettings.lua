@@ -1,5 +1,5 @@
--- Blackbook: the "Settings" tab (section 9): language, enforcement toggles and
--- the minimap button. The auto-reply control joins in M7 with the feature.
+-- Blackbook: the "Settings" tab (section 9): language, enforcement toggles, the
+-- minimap button, the automatic reply and a way back into the setup wizard.
 local _, ns = ...
 
 local Settings = ns.Settings
@@ -54,12 +54,21 @@ local function Build(content)
     controls[path] = check
   end
 
+  Place(Widgets.Label(content, Text("OPT_REPLY")), 4, 24)
+  local reply = ns.ReplyControl.Create(content, Place)
+  if not reply then return nil end
+
+  local setup = Widgets.Button(content, Text("OPT_RUN_SETUP"), 200, function() ns.Wizard.Open() end)
+  if not setup then return nil end
+  Place(setup, 0, 30)
+
   return {
     Refresh = function()
       language:SetValue(Settings.Get("language") or "auto")
       for path, check in pairs(controls) do
         check:SetChecked(Settings.Get(path) and true or false)
       end
+      reply.Refresh()
     end,
   }
 end

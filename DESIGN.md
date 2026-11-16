@@ -143,7 +143,9 @@ UI/TabShare.lua        -- "Share" tab (export and import codes)
 UI/TabCommunity.lua    -- "Community" tab (consent, switches, preview, revoke)
 UI/TabRules.lua        -- "Rules" tab (community rules, hidden flags)
 UI/TabSettings.lua     -- "Settings" tab
-UI/Wizard.lua
+UI/Wizard.lua           -- first-run wizard
+UI/ReplyControl.lua    -- auto-reply choice and preview, shared by the wizard and the Settings tab
+Diagnostics/Check.lua  -- "/bb check": client feature report and the loopback test
 UI/Minimap.lua
 UI/ContextMenu.lua
 Main.lua               -- ADDON_LOADED bootstrap, slash commands, events
@@ -282,10 +284,11 @@ All enforcement reads `Resolver.Verdict`.
 - **never contains the comment**;
 - the user's own outgoing reply is hidden from their chat for 15 seconds (match by text prefix);
 - send failures are caught with `pcall` and reported once.
+- Implementation: a frame listens to `CHAT_MSG_WHISPER` (an event, so it also fires for a whisper the chat filter hides); the echo of the reply is hidden by a filter on `CHAT_MSG_WHISPER_INFORM` that matches the first 40 bytes of the text for 15 seconds. The text is cut with a UTF-8 safe truncation (`Wire.Truncate`). The comment is not even passed to the reply code, so it cannot leak.
 
 ### 6.5 Slash commands
 `/blackbook` and `/bb`:
-`(none)` toggle manager, `list`, `ignore <name>`, `warn <name>`, `remove <name>`, `setup`, `minimap`, `lang de|en|auto`, `version` (prints the TOC version), `help`. The `ignore` and `warn` commands open the editor with the name prefilled.
+`(none)` toggle manager, `list`, `ignore <name>`, `warn <name>`, `remove <name>`, `setup` (opens the wizard), `test <ignore|warn|notice>` (a sample chat line with that verdict's icon), `check` (client feature report and a loopback test of the sharing connection), `minimap`, `lang de|en|auto`, `version` (prints the TOC version), `help`. The `ignore` and `warn` commands open the editor with the name prefilled.
 
 ### 6.6 Display
 - Chat icon prefix for `warn` (alert icon) and `notice` (blue arrow); `ignore` is hidden by chat enforcement, so it needs no icon except in the manager and tooltip (red cross); when `hideChat` is off, the ignored player's messages carry the red cross instead.
@@ -465,8 +468,8 @@ Keep the layout simple and uniform; use `Widgets.lua` helpers (checkbox, radio g
   4. *Share*: export (list name, label selection, comments checkbox, Create code button with a read-only code box), import (paste box, Import and Clear buttons, a confirmation popup showing list name, author, size and date),  The code and paste boxes sit in a scroll frame (`Widgets.CodeBox`), because a long code in a plain multi-line box would draw over the widgets below it and steal their clicks. The export settings are saved as they are changed; typing is never overwritten by a refresh.
   5. *Community*: the disclosure and its confirm button, send and receive switches for friends and guild (global shown as not available), the reasons that may be shared, a preview of what would be sent (hashes and labels, never names), a counter of held reports and queued messages, and *Revoke and delete* (with a confirmation).
   6. *Rules*: the community rules (add one rule per chosen reason; Shift-click removes; a rule that ignores asks for confirmation) and the list of hidden flags (click to show again).
-  7. *Settings*: language, enforcement toggles, auto-reply mode with a preview line, minimap, restart wizard.
-- **Wizard** (first run, 4 pages): welcome and language; what "ignore" does; auto-reply; finish and minimap. A separate page for community consent is reachable from the Community tab, not forced on first run.
+  7. *Settings*: language, enforcement toggles (including the minimap button), the auto-reply choice (off, short, with reasons) with a preview of the sentence, and *Run setup again*.
+- **Wizard** (first run, 4 pages, `setupDone`): welcome and language; what "ignore" does (with the hide-chat and decline switches); auto-reply; finish and minimap. It opens two seconds after login on the first run only. Closing it in any way (Finish, the close button, Escape) counts as done, but only after it has really been shown, so merely building the window cannot finish the setup. `/bb setup` and a button on the Settings tab open it again. It never switches sharing on or confirms the community notice. A separate page for community consent is reachable from the Community tab, not forced on first run.
 - **Minimap button:** left-click toggles the manager, drag repositions, tooltip shows the record count.
 - **Context menu:** add entries on player menus (unit frames, chat names, group, guild lists): *Ignore...*, *Warn...* when no record exists; *Edit...* and *Remove* when one does; *Adopt...* when only a subscription lists the player; and for a community-flagged player, *This flag is wrong*. Do nothing for the player's own character or for non-players.
 
@@ -481,6 +484,8 @@ Keep the layout simple and uniform; use `Widgets.lua` helpers (checkbox, radio g
 ---
 
 ## 11. Testing
+
+Beyond the groups below, `tests/run.lua` also keeps the locales honest: every English key has a German text and the reverse, both take the same `%s` and `%d` arguments, and every locale key the code asks for exists. Saved data of every age (empty, unversioned, partial, damaged, newer) must come out whole, with nothing the player chose lost.
 
 Pure modules must be testable outside the game. Provide `tests/run.lua` in the repository root. It loads each addon file with `loadfile(path)("Blackbook", ns)` so the `local _, ns = ...` header works, stubs the few WoW globals needed (`time`, `strtrim`, `strsplit`) and runs assertions with plain `lua5.1`. Required tests:
 
@@ -516,7 +521,7 @@ Each milestone must load without Lua errors, work with `/reload`, and leave prev
 
 **M7: community, friends and guild (0.7.0, built before the polish step).** `Hash`, `Report`, `Aggregate`, `Consent`, `Rules`, `Roster`, `Net`, the *Community* and *Rules* tabs, resolver, tooltip and menu integration. Sharing is automatic and silent after one confirmed disclosure; friends and guild are separate from each other's switches and from the global world. *Accept:* nothing is sent or accepted while consent is missing; each switch works independently; a record change is reported in the background without any prompt and a removal is retracted; reports from the guild or from a friend flag players with a notice only; a rule can raise that per source and tier; hidden flags suppress it; revoke withdraws and deletes; all validation and tier-boundary tests pass.
 
-**M8: polish.** `Enforce/Reply` (with its control and preview line on the Settings tab), `UI/Wizard`, German locale completion, settings migration test. *Accept:* auto-reply obeys every rule in 6.4; first-run wizard appears once; the language switch works.
+**M8: polish (0.8.0).** `Enforce/Reply` (with its control and preview line on the Settings tab), `UI/Wizard`, German locale completion (checked by test), settings migration tests, and `/bb check` so the sharing connection can be tested with one character. *Accept:* auto-reply obeys every rule in 6.4; first-run wizard appears once; the language switch works.
 
 **M9: global channel.** `Community/Global.lua` and its consent text. *Accept:* the hour-boundary overlap works; relays do not loop; global rules enforce the tier 3 minimum; rate limits drop floods.
 

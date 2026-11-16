@@ -78,20 +78,27 @@ function Chat.Preview(verdict)
   if frame then frame:AddMessage(Chat.Mark(verdict, "[" .. Output.Text("VERDICT_" .. string.upper(verdict)) .. "] " .. sample)) end
 end
 
+-- Adds a filter function to a chat event. Returns false when the client has no
+-- filter API.
+function Chat.AddFilter(event, fn)
+  local add = ChatFrame_AddMessageEventFilter
+  if type(add) ~= "function" and ChatFrameUtil then add = ChatFrameUtil.AddMessageEventFilter end
+  if type(add) ~= "function" then return false end
+  add(event, fn)
+  return true
+end
+
 local registered = false
 
 -- Installs the filter on every chat event. Returns false when the client has
 -- no filter API; the addon keeps running without chat hiding.
 function Chat.Register()
   if registered then return true end
-  local add = ChatFrame_AddMessageEventFilter
-  if type(add) ~= "function" and ChatFrameUtil then add = ChatFrameUtil.AddMessageEventFilter end
-  if type(add) ~= "function" then
-    Output.Print(Output.Text("MSG_NO_CHAT_FILTER"))
-    return false
-  end
   for _, event in ipairs(EVENTS) do
-    add(event, Chat.Filter)
+    if not Chat.AddFilter(event, Chat.Filter) then
+      Output.Print(Output.Text("MSG_NO_CHAT_FILTER"))
+      return false
+    end
   end
   registered = true
   return true

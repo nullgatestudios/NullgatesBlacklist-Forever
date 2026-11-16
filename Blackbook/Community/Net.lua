@@ -368,12 +368,51 @@ local function IsFriendOnWhisper(channel, name)
   return channel == "WHISPER" and Roster.IsFriend(name)
 end
 
+-- --- Self test ("/bb check") ---------------------------------------------------------
+-- Whispers a short message to the player's own character and waits for it to come
+-- back. It proves, with nobody else involved, that the client accepts addon
+-- whispers to a two-part name and delivers them to this addon.
+
+local selfTest = nil -- { nonce =, done = }
+local SELF_TEST_SECONDS = 3
+
+-- Calls done(true) when the message came back, or done(false, "refused" | "noecho").
+function Net.SelfTest(done)
+  if selfTest then return end
+  local parts = {}
+  for index = 1, 4 do parts[index] = string.format("%02x", math.random(0, 255)) end
+  local nonce = table.concat(parts)
+  local me = Identity.Self()
+  if me == "?" or not Net.io.send(PREFIX, "T1	" .. nonce, "WHISPER", me) then
+    done(false, "refused")
+    return
+  end
+  local test = { nonce = nonce, done = done }
+  selfTest = test
+  Net.io.after(SELF_TEST_SECONDS, function()
+    if selfTest == test then
+      selfTest = nil
+      done(false, "noecho")
+    end
+  end)
+end
+
 -- Handles one addon message. Anything that fails a check is dropped silently.
 function Net.OnMessage(prefix, message, channel, sender)
   if prefix ~= PREFIX then return end
   local text = Safe.Str(message)
   local name = Identity.Normalize(sender)
-  if not text or not name or Identity.Same(name, Identity.Self()) then return end
+  if not text or not name then return end
+  if Identity.Same(name, Identity.Self()) then
+    -- Our own messages are ignored, except the echo of a running self test.
+    local nonce = text:match("^T1	(%x%x%x%x%x%x%x%x)$")
+    if nonce and channel == "WHISPER" and selfTest and selfTest.nonce == nonce then
+      local test = selfTest
+      selfTest = nil
+      test.done(true)
+    end
+    return
+  end
   if channel ~= "GUILD" and channel ~= "WHISPER" then return end
 
   local parsed = Report.Parse(text, Hash.Day(Net.io.serverTime()))
@@ -487,4 +526,5 @@ function Net.Reset()
   pending, destOrder, pumping = {}, {}, false
   confirmed, helloed, repliedAt, rates = {}, {}, {}, {}
   enabledNow, changePending, notifyPending = {}, false, false
+  selfTest = nil
 end

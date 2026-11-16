@@ -61,6 +61,8 @@ Load("Community/Consent.lua")
 Load("Community/Rules.lua")
 Load("Community/Roster.lua")
 Load("Community/Net.lua")
+Load("Enforce/Reply.lua")
+Load("UI/ReplyControl.lua")
 Load("UI/Manager.lua")
 Load("UI/TabList.lua")
 Load("UI/TabSettings.lua")
@@ -2476,6 +2478,404 @@ Group("Revoke", function()
   Advance(2)
   EQ(#sent, 0, "and nothing is sent afterwards")
   UnitName, IsInGuild = nil, nil
+end)
+
+-- --- Localization: German is complete and matches English (section 10) ------------------------
+
+Group("Locale parity", function()
+  -- run.lua only loads the English table, so load the German one on the side.
+  local other = {}
+  local chunk = assert(loadfile(root .. "/Blackbook/Locale/enUS.lua"))
+  chunk("Blackbook", other)
+  local deChunk = assert(loadfile(root .. "/Blackbook/Locale/deDE.lua"))
+  deChunk("Blackbook", other)
+  local en, de = other.L, other.L_DE
+
+  local missing, extra = {}, {}
+  for key in pairs(en) do if rawget(de, key) == nil then missing[#missing + 1] = key end end
+  for key in pairs(de) do if rawget(en, key) == nil then extra[#extra + 1] = key end end
+  table.sort(missing)
+  table.sort(extra)
+  EQ(table.concat(missing, ","), "", "every English key has a German text")
+  EQ(table.concat(extra, ","), "", "German has no keys English lacks")
+
+  -- A German text must take the same arguments as the English one.
+  local function Specifiers(text)
+    local list = {}
+    for spec in text:gmatch("%%[sd]") do list[#list + 1] = spec end
+    return table.concat(list, " ")
+  end
+  local mismatched = {}
+  for key, text in pairs(en) do
+    local german = rawget(de, key)
+    if german and Specifiers(text) ~= Specifiers(german) then mismatched[#mismatched + 1] = key end
+  end
+  table.sort(mismatched)
+  EQ(table.concat(mismatched, ","), "", "German texts take the same format arguments as English")
+  local blank = {}
+  for key, text in pairs(de) do if type(text) ~= "string" or text == "" then blank[#blank + 1] = key end end
+  EQ(#blank, 0, "no German text is empty")
+
+  -- Every key the code asks for exists, so a typo is caught here and not in game.
+  local toc = assert(io.open(root .. "/Blackbook/Blackbook.toc", "rb"))
+  local tocText = toc:read("*a")
+  toc:close()
+  local unknown, seen = {}, {}
+  for file in tocText:gmatch("([%w/_]+%.lua)") do
+    local handle = assert(io.open(root .. "/Blackbook/" .. file, "rb"))
+    local source = handle:read("*a")
+    handle:close()
+    if not file:find("^Locale/") then
+      for key in source:gmatch('Text%("([A-Z][A-Z0-9_]+)"%)') do
+        if en[key] == nil and not seen[key] then seen[key] = true; unknown[#unknown + 1] = file .. ":" .. key end
+      end
+      for key in source:gmatch('"([A-Z][A-Z0-9_]*)"') do
+        if (key:find("^ERR_") or key:find("^MSG_") or key:find("^OPT_")) and en[key] == nil and not seen[key] then
+          seen[key] = true
+          unknown[#unknown + 1] = file .. ":" .. key
+        end
+      end
+    end
+  end
+  table.sort(unknown)
+  EQ(table.concat(unknown, ", "), "", "every locale key used in the code exists")
+end)
+
+-- --- Settings: saved data of every age is made whole, nothing the player set is lost -------------
+
+Group("Settings migration", function()
+  local Settings = ns.Settings
+  local function Run(saved)
+    BlackbookDB = saved
+    local db, state = Settings.Init()
+    return db, state
+  end
+
+  local db = Run(nil)
+  EQ(db.version, 1, "empty data becomes version 1")
+  EQ(db.settings.language, "auto", "with the default language")
+  EQ(db.settings.replyMode, "none", "and the reply off")
+  EQ(db.settings.setupDone, false, "and the wizard still to show")
+  OK(db.settings.export.id:match("^%x+$") and #db.settings.export.id == 12, "a 12 digit export id is made")
+  OK(db.community.install.secret:match("^%x+$") and #db.community.install.secret == 32, "a 32 digit install secret is made")
+  OK(type(db.records) == "table" and type(db.subscriptions) == "table", "the tables exist")
+  OK(type(db.community.reports) == "table" and type(db.community.hidden) == "table", "the community tables exist")
+  EQ(db.settings.community.guild.send, false, "community switches are off")
+  EQ(db.settings.community.consentVersion, 0, "and nothing is confirmed")
+
+  local id, secret = db.settings.export.id, db.community.install.secret
+  Run(BlackbookDB)
+  EQ(ns.db.settings.export.id, id, "starting again keeps the export id")
+  EQ(ns.db.community.install.secret, secret, "and the install secret")
+
+  -- Old and partial data keeps what the player chose and gains what is new.
+  db = Run({ settings = { hideChat = false, language = "de", replyMode = "labels",
+    community = { rules = { { label = "scam", source = "guild", minTier = 2, verdict = "warn" } } } },
+    records = { ["a b"] = { name = "A B", verdict = "ignore", labels = { spam = true }, comment = "c" } } })
+  EQ(db.version, 1, "unversioned data is migrated")
+  EQ(db.settings.hideChat, false, "a changed setting is kept")
+  EQ(db.settings.language, "de", "the language is kept")
+  EQ(db.settings.replyMode, "labels", "the reply mode is kept")
+  EQ(db.settings.autoDecline, true, "a missing setting gets its default")
+  EQ(#db.settings.community.rules, 1, "the player's rules are kept")
+  EQ(db.settings.community.guild.send, false, "a missing nested setting gets its default")
+  EQ(db.records["a b"].comment, "c", "records are kept")
+  OK(db.community.install.secret ~= nil, "and an install secret appears")
+
+  -- Damaged data is repaired instead of crashing.
+  db = Run({ version = 1, settings = { export = "junk", community = 5 }, community = { install = "x" } })
+  EQ(type(db.settings.export), "table", "a broken export table is replaced")
+  OK(#db.settings.export.id == 12, "with a new id")
+  EQ(type(db.settings.community), "table", "a broken community table is replaced")
+  EQ(#db.community.install.secret, 32, "a broken install table is replaced with a new secret")
+  db = Run({ version = 1, settings = { export = { id = "nothex!" } }, community = { install = { secret = "short" } } })
+  OK(db.settings.export.id:match("^%x+$") ~= nil and #db.settings.export.id == 12, "a bad export id is replaced")
+  EQ(#db.community.install.secret, 32, "a bad secret is replaced")
+  db = Run({ version = 1 })
+  OK(type(db.settings) == "table" and type(db.community) == "table", "data without settings or community is completed")
+
+  -- Newer data is left alone.
+  local newer = { version = 99, settings = { hideChat = "stay" }, records = { x = 1 } }
+  local _, state = Run(newer)
+  EQ(state, "newer", "data from a later build is reported")
+  EQ(ns.db, nil, "and not loaded, so nothing can modify it")
+  EQ(newer.settings.hideChat, "stay", "it is untouched")
+  EQ(newer.version, 99, "and keeps its version")
+  BlackbookDB = nil
+  Settings.Init()
+end)
+
+-- --- Enforce/Reply: the optional automatic reply (section 6.4) --------------------------------------
+
+Group("Reply", function()
+  local Reply, Settings, Records, Const = ns.Reply, ns.Settings, ns.Records, ns.Const
+  local now, timers, sent = 0, {}, {}
+  local sendOk = true
+  Reply.io = {
+    send = function(text, target)
+      if not sendOk then return false end
+      sent[#sent + 1] = { text = text, target = target }
+      return true
+    end,
+    after = function(delay, fn) timers[#timers + 1] = { at = now + delay, fn = fn } end,
+    now = function() return now end,
+  }
+  local function Advance(seconds)
+    local limit = now + seconds
+    repeat
+      local pick
+      for index, timer in ipairs(timers) do
+        if timer.at <= limit and (not pick or timer.at < timers[pick].at) then pick = index end
+      end
+      if pick then
+        local timer = table.remove(timers, pick)
+        now = math.max(now, timer.at)
+        timer.fn()
+      end
+    until not pick
+    now = limit
+  end
+  local function Fresh(mode)
+    FreshDb()
+    Reply.Reset()
+    UnitName = function(unit) if unit == "player" then return "Self", "Char" end end
+    sent, timers, printed, sendOk = {}, {}, {}, true
+    Settings.Set("replyMode", mode or "none")
+  end
+
+  -- Off by default.
+  Fresh("none")
+  Records.Save("Rude One", "ignore", { toxicity = true, spam = true }, "my private comment")
+  Reply.OnWhisper("hello", "Rude One")
+  Advance(5)
+  EQ(#sent, 0, "with the reply off nothing is sent")
+
+  -- Short reply: after a delay, once per player and session.
+  Fresh("short")
+  Records.Save("Rude One", "ignore", { toxicity = true, spam = true }, "my private comment")
+  Reply.OnWhisper("hello", "Rude One")
+  EQ(#sent, 0, "nothing is sent at once")
+  Advance(1.4)
+  EQ(#sent, 0, "nor before 1.5 seconds")
+  Advance(0.2)
+  EQ(#sent, 1, "the reply goes out after 1.5 seconds")
+  EQ(sent[1].text, ns.L.REPLY_SHORT, "with the short sentence")
+  EQ(sent[1].target, "Rude One", "to the player")
+  Reply.OnWhisper("hello again", "Rude One")
+  Reply.OnWhisper("hello?", "rude one")
+  Advance(5)
+  EQ(#sent, 1, "a player gets one reply per session, whatever the spelling")
+  Records.Save("Rude Two", "ignore", { spam = true }, "c")
+  Reply.OnWhisper("hi", "Rude Two")
+  Advance(2)
+  EQ(#sent, 2, "another player gets their own reply")
+  Reply.Reset()
+  Reply.OnWhisper("hi", "Rude One")
+  Advance(2)
+  EQ(#sent, 3, "a new session answers again")
+
+  -- The reasons variant names the labels and never the comment.
+  Fresh("labels")
+  Records.Save("Rude One", "ignore", { toxicity = true, spam = true }, "my private comment")
+  Reply.OnWhisper("hello", "Rude One")
+  Advance(2)
+  OK(sent[1].text:find(ns.L.LABEL_TOXICITY, 1, true) ~= nil, "the reasons reply names a label")
+  OK(sent[1].text:find(ns.L.LABEL_SPAM, 1, true) ~= nil, "and the other")
+  OK(not sent[1].text:find("private", 1, true) and not sent[1].text:find("comment", 1, true), "but never the comment")
+  OK(#sent[1].text <= 250, "and stays within 250 bytes")
+
+  -- Only an ignore from an own record is answered.
+  Fresh("short")
+  Records.Save("Warned One", "warn", { spam = true }, "c")
+  Reply.OnWhisper("hi", "Warned One")
+  ns.Subscriptions.Import({ id = "abc123", name = "L", author = "X Y", count = 1, records = {
+    ["listed one"] = { name = "Listed One", labels = { spam = true }, comment = "c" } } })
+  ns.Subscriptions.SetRule("abc123", "spam", "ignore")
+  EQ(ns.Resolver.Verdict("Listed One"), "ignore", "(an imported list ignores this player)")
+  Reply.OnWhisper("hi", "Listed One")
+  Reply.OnWhisper("hi", "Stranger One")
+  Reply.OnWhisper("hi", "Self Char")
+  issecretvalue = function(value) return value == SECRET end
+  Reply.OnWhisper("hi", SECRET)
+  Reply.OnWhisper(SECRET, "Rude One")
+  issecretvalue = nil
+  Reply.OnWhisper("hi", nil)
+  Advance(5)
+  EQ(#sent, 0, "warn, imported-list, unknown, own and secret senders get no reply")
+  Records.Save("Rude One", "ignore", { spam = true }, "c")
+  Reply.OnWhisper("hi", "Rude One")
+  Advance(2)
+  EQ(#sent, 1, "an own ignore record does")
+
+  -- The echo of our own reply is hidden for 15 seconds.
+  EQ(Reply.Filter(nil, "CHAT_MSG_WHISPER_INFORM", sent[1].text), true, "our own reply is hidden from the chat")
+  EQ(Reply.Filter(nil, "CHAT_MSG_WHISPER_INFORM", sent[1].text .. " (edited tail)"), true, "matched by its first words")
+  EQ(Reply.Filter(nil, "CHAT_MSG_WHISPER_INFORM", "something I typed myself"), false, "a message I typed is shown")
+  Advance(13)
+  EQ(Reply.Filter(nil, "CHAT_MSG_WHISPER_INFORM", sent[1].text), true, "still hidden after 13 seconds")
+  Advance(3)
+  EQ(Reply.Filter(nil, "CHAT_MSG_WHISPER_INFORM", sent[1].text), false, "shown again after 15 seconds")
+  issecretvalue = function(value) return value == SECRET end
+  EQ(Reply.Filter(nil, "CHAT_MSG_WHISPER_INFORM", SECRET), false, "a secret message is never touched")
+  issecretvalue = nil
+
+  -- A failing send is reported once.
+  Fresh("short")
+  Records.Save("Rude One", "ignore", { spam = true }, "c")
+  Records.Save("Rude Two", "ignore", { spam = true }, "c")
+  sendOk = false
+  Reply.OnWhisper("hi", "Rude One")
+  Reply.OnWhisper("hi", "Rude Two")
+  Advance(3)
+  local failures = 0
+  for _, line in ipairs(printed) do if line:find(ns.L.MSG_REPLY_FAILED, 1, true) then failures = failures + 1 end end
+  EQ(failures, 1, "a failed send is reported once, however often it happens")
+
+  -- Long reasons are cut on a character boundary.
+  Fresh("labels")
+  local saved = ns.L.LABEL_TOXICITY
+  ns.L.LABEL_TOXICITY = string.rep("\195\164", 200)
+  Records.Save("Rude One", "ignore", { toxicity = true }, "c")
+  Reply.OnWhisper("hi", "Rude One")
+  Advance(2)
+  OK(#sent[1].text <= 250, "a long reply is cut to 250 bytes")
+  local tail = sent[1].text:match("[\195\164]+$")
+  OK(tail ~= nil and #tail % 2 == 0, "without splitting an umlaut")
+  ns.L.LABEL_TOXICITY = saved
+
+  -- The preview line on the settings tab and in the wizard.
+  local Control = ns.ReplyControl
+  EQ(Control.PreviewText("none"), ns.L.OPT_REPLY_OFF, "no preview sentence while off")
+  OK(Control.PreviewText("short"):find(ns.L.REPLY_SHORT, 1, true) ~= nil, "the short preview shows the sentence")
+  local withReasons = Control.PreviewText("labels")
+  OK(withReasons:find(ns.L.LABEL_TOXICITY, 1, true) and withReasons:find(ns.L.LABEL_SPAM, 1, true), "the reasons preview shows sample reasons")
+
+  -- Registration listens for whispers and filters the echo.
+  Fresh("short")
+  local frames, filters = {}, {}
+  local savedCreate, savedTimer, savedAdd = CreateFrame, C_Timer, ChatFrame_AddMessageEventFilter
+  CreateFrame = function()
+    local frame = { events = {}, scripts = {} }
+    function frame:RegisterEvent(event) self.events[event] = true end
+    function frame:SetScript(name, fn) self.scripts[name] = fn end
+    frames[#frames + 1] = frame
+    return frame
+  end
+  C_Timer = { After = function() end }
+  ChatFrame_AddMessageEventFilter = function(event, fn) filters[event] = fn end
+  OK(Reply.Register(), "registration succeeds")
+  OK(frames[1] and frames[1].events.CHAT_MSG_WHISPER, "whispers are listened to")
+  EQ(filters.CHAT_MSG_WHISPER_INFORM, Reply.Filter, "the echo filter is installed")
+  Records.Save("Rude One", "ignore", { spam = true }, "c")
+  frames[1].scripts.OnEvent(frames[1], "CHAT_MSG_WHISPER", "hello", "Rude One")
+  EQ(#timers, 1, "a whisper event schedules the reply")
+  CreateFrame, C_Timer, ChatFrame_AddMessageEventFilter = savedCreate, savedTimer, savedAdd
+  UnitName = nil
+end)
+
+-- --- Net: the self test behind "/bb check" ---------------------------------------------------------------
+
+Group("Net self test", function()
+  local Net, Const = ns.Net, ns.Const
+  local PREFIX = Const.COMMUNITY_PREFIX
+  local now, timers, sent = 0, {}, {}
+  local sendOk = true
+  Net.io = {
+    send = function(prefix, text, channel, target)
+      if not sendOk then return false end
+      sent[#sent + 1] = { prefix = prefix, text = text, channel = channel, target = target }
+      return true
+    end,
+    after = function(delay, fn) timers[#timers + 1] = { at = now + delay, fn = fn } end,
+    now = function() return now end,
+    serverTime = function() return 1700000000 end,
+  }
+  local function Advance(seconds)
+    local limit = now + seconds
+    repeat
+      local pick
+      for index, timer in ipairs(timers) do
+        if timer.at <= limit and (not pick or timer.at < timers[pick].at) then pick = index end
+      end
+      if pick then
+        local timer = table.remove(timers, pick)
+        now = math.max(now, timer.at)
+        timer.fn()
+      end
+    until not pick
+    now = limit
+  end
+  local function Fresh()
+    FreshDb()
+    Net.Reset()
+    UnitName = function(unit) if unit == "player" then return "Alice", "One" end end
+    sent, timers, sendOk = {}, {}, true
+  end
+  local result
+  local function Done(ok, reason) result = { ok = ok, reason = reason } end
+
+  -- It works: the message goes to our own name and comes back.
+  Fresh()
+  result = nil
+  Net.SelfTest(Done)
+  EQ(#sent, 1, "one message is sent")
+  EQ(sent[1].prefix, PREFIX, "on the community prefix")
+  EQ(sent[1].channel, "WHISPER", "as a whisper")
+  EQ(sent[1].target, "Alice One", "to the player's own name")
+  local nonce = sent[1].text:match("^T1\t(%x%x%x%x%x%x%x%x)$")
+  OK(nonce ~= nil, "carrying a random 8 digit code")
+  EQ(result, nil, "no verdict before the message comes back")
+  Net.OnMessage(PREFIX, "T1\t" .. string.rep("0", 8), "WHISPER", "Alice One")
+  EQ(result, nil, "a different code is not our message")
+  Net.OnMessage(PREFIX, "T1\t" .. nonce, "GUILD", "Alice One")
+  EQ(result, nil, "nor is the same code on another channel")
+  Net.OnMessage(PREFIX, "T1\t" .. nonce, "WHISPER", "Mallory Two")
+  EQ(result, nil, "nor from another player")
+  Net.OnMessage(PREFIX, "T1\t" .. nonce, "WHISPER", "Alice One")
+  EQ(result and result.ok, true, "the echo from our own name passes the test")
+  result = nil
+  Net.OnMessage(PREFIX, "T1\t" .. nonce, "WHISPER", "Alice One")
+  EQ(result, nil, "and counts only once")
+  Advance(5)
+  EQ(result, nil, "the timeout does not fire afterwards")
+
+  -- Nothing comes back.
+  Fresh()
+  result = nil
+  Net.SelfTest(Done)
+  Advance(2.9)
+  EQ(result, nil, "still waiting after 2.9 seconds")
+  Advance(0.2)
+  EQ(result and result.ok, false, "no echo within 3 seconds fails the test")
+  EQ(result and result.reason, "noecho", "saying that nothing came back")
+
+  -- The client refuses the send.
+  Fresh()
+  sendOk = false
+  result = nil
+  Net.SelfTest(Done)
+  EQ(result and result.ok, false, "a refused send fails at once")
+  EQ(result and result.reason, "refused", "saying the client refused")
+
+  -- Unknown own name.
+  Fresh()
+  UnitName = nil
+  result = nil
+  Net.SelfTest(Done)
+  EQ(result and result.reason, "refused", "an unknown own name cannot be tested")
+
+  -- One test at a time; another player's T1 never starts or ends anything.
+  Fresh()
+  local first, second
+  Net.SelfTest(function(ok) first = ok end)
+  Net.SelfTest(function(ok) second = ok end)
+  EQ(#sent, 1, "a second test while one runs does nothing")
+  Net.OnMessage(PREFIX, "T1\t" .. sent[1].text:match("(%x%x%x%x%x%x%x%x)$"), "WHISPER", "Bob Two")
+  EQ(first, nil, "another player cannot answer our test")
+  EQ(second, nil, "and the ignored second test never reports")
+  Net.OnMessage(PREFIX, "T1\tzzzzzzzz", "WHISPER", "Bob Two")
+  UnitName = nil
+  Net.Reset()
 end)
 
 -- --- Summary -------------------------------------------------------------------

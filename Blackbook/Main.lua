@@ -74,7 +74,7 @@ local function ShowHelp()
   local keys = {
     "HELP_HEADER", "HELP_TOGGLE", "HELP_LIST", "HELP_IGNORE", "HELP_WARN",
     "HELP_REMOVE", "HELP_SETUP", "HELP_MINIMAP", "HELP_LANG", "HELP_VERSION",
-    "HELP_TEST", "HELP_HELP",
+    "HELP_TEST", "HELP_CHECK", "HELP_HELP",
   }
   for _, key in ipairs(keys) do
     Print(Text(key))
@@ -108,7 +108,9 @@ local function HandleSlash(input)
       Print(Text("MSG_TEST_USAGE"))
     end
   elseif command == "setup" then
-    Print(string.format(Text("MSG_NOT_AVAILABLE"), Text("CMD_SETUP")))
+    ns.Wizard.Open()
+  elseif command == "check" then
+    ns.Check.Run()
   elseif command == "minimap" then
     ns.Minimap.Toggle()
   elseif command == "lang" then
@@ -128,7 +130,13 @@ SlashCmdList["BLACKBOOK"] = HandleSlash
 
 local loader = CreateFrame("Frame")
 loader:RegisterEvent("ADDON_LOADED")
+loader:RegisterEvent("PLAYER_LOGIN")
 loader:SetScript("OnEvent", function(_, event, name)
+  if event == "PLAYER_LOGIN" then
+    -- The first-run wizard waits a moment so the interface has finished loading.
+    if ns.db and type(C_Timer) == "table" then C_Timer.After(2, ns.Wizard.MaybeOpen) end
+    return
+  end
   if event ~= "ADDON_LOADED" or name ~= addonName then return end
   local _, state = ns.Settings.Init()
   ApplyLanguage()
@@ -139,6 +147,7 @@ loader:SetScript("OnEvent", function(_, event, name)
   ns.Portrait.Register()
   ns.Tooltip.Register()
   ns.Net.Register()
+  ns.Reply.Register()
   if state == "newer" then Print(Text("MSG_DB_NEWER")) end
   Print(Text("MSG_LOADED"))
 end)

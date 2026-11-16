@@ -295,7 +295,7 @@ ns.Settings.Init()
 -- --- Slash commands -----------------------------------------------------------
 
 local out = Run("help")
-Equals(#out, 12, "help prints twelve lines")
+Equals(#out, 13, "help prints thirteen lines")
 Contains(out[1], ns.L.HELP_HEADER, "help header")
 Contains(out[2], Const.SLASH_BLACKBOOK_SHORT, "help lines use the short command")
 
@@ -343,7 +343,8 @@ Run("ignore Self Char")
 Contains(LastPrinted(), ns.L.MSG_SELF, "own character is refused")
 
 Run("setup")
-Contains(LastPrinted(), string.format(ns.L.MSG_NOT_AVAILABLE, ns.L.CMD_SETUP), "setup is not available yet")
+Check(_G.BlackbookWizard ~= nil and _G.BlackbookWizard:IsShown(), "/bb setup opens the setup wizard")
+_G.BlackbookWizard:Hide()
 
 -- Minimap button: created at load, toggled by /bb minimap, position persists.
 local minimapButton = _G.BlackbookMinimapButton
@@ -1076,6 +1077,183 @@ do
   ns.Records.Remove("smoke ign")
   IsInGuild = nil
   Run("")
+end
+
+-- --- M8: setup wizard, reply control, first-run trigger and /bb check ------------------------------------
+
+do
+  local function RunTimers(maxDelay)
+    local keep = {}
+    for _, timer in ipairs(smokeTimers) do
+      if timer.delay <= maxDelay then timer.fn() else keep[#keep + 1] = timer end
+    end
+    smokeTimers = keep
+  end
+  local function Button(root, text)
+    return Find(root, function(f) return f.kind == "Button" and f.text == text end)[1]
+  end
+  local function Checks(root, text)
+    return Find(root, function(f) return f.kind == "CheckButton" and f.text == text end)
+  end
+  local function TabContent(predicate)
+    for _, child in ipairs(manager.children) do
+      if predicate(child) or #Find(child, predicate) > 0 then return child end
+    end
+    return nil
+  end
+
+  -- First run: the wizard opens a moment after login, once.
+  local loginFrame
+  for _, frame in ipairs(frames) do
+    if frame.events and frame.events.PLAYER_LOGIN then loginFrame = frame end
+  end
+  Check(loginFrame ~= nil, "the login event is listened to")
+  ns.Settings.Set("setupDone", false)
+  local wizard = _G.BlackbookWizard
+  wizard:Hide()
+  smokeTimers = {}
+  loginFrame._scripts.OnEvent(loginFrame, "PLAYER_LOGIN")
+  local waiting
+  for _, timer in ipairs(smokeTimers) do if timer.delay == 2 then waiting = timer end end
+  Check(waiting ~= nil, "the wizard is scheduled two seconds after login")
+  Check(not wizard:IsShown(), "and does not open at once")
+  RunTimers(2)
+  Check(wizard:IsShown(), "on the first run the wizard opens")
+  Equals(ns.Settings.Get("setupDone"), false, "opening it does not finish the setup")
+  Equals(wizard.strata, "DIALOG", "it sits above other addons' frames")
+  Equals(wizard.template, "BasicFrameTemplateWithInset", "it uses the standard window frame")
+
+  local function ShownPages()
+    local count = 0
+    for _, child in ipairs(wizard.children) do
+      if child.kind == "Frame" and child.shown then count = count + 1 end
+    end
+    return count
+  end
+  Equals(ShownPages(), 1, "one page is shown")
+  local back = Button(wizard, ns.L.WIZ_BACK)
+  local nextButton = Button(wizard, ns.L.WIZ_NEXT)
+  Check(back ~= nil and nextButton ~= nil, "Back and Next exist")
+  Equals(back.shown, false, "Back is hidden on the first page")
+
+  -- Page 1: language.
+  local englishRadio = Checks(wizard, ns.L.LANG_EN)[1]
+  printed = {}
+  Click(englishRadio)
+  Equals(ns.Settings.Get("language"), "en", "the language radio saves the language")
+  Click(Checks(wizard, ns.L.LANG_AUTO)[1])
+  Equals(ns.Settings.Get("language"), "auto", "and can go back to automatic")
+
+  -- Page 2: what Ignore does.
+  Click(nextButton)
+  Equals(back.shown, true, "Back appears on the second page")
+  Equals(ShownPages(), 1, "still one page")
+  local hide = Checks(wizard, ns.L.OPT_HIDE_CHAT)[1]
+  local decline = Checks(wizard, ns.L.OPT_AUTO_DECLINE)[1]
+  Equals(hide.checked, true, "the page shows the current chat setting")
+  hide:SetChecked(false)
+  Click(hide)
+  Equals(ns.Settings.Get("hideChat"), false, "its checkbox changes the setting")
+  hide:SetChecked(true)
+  Click(hide)
+  Equals(ns.Settings.Get("hideChat"), true, "and back")
+  decline:SetChecked(false)
+  Click(decline)
+  Equals(ns.Settings.Get("autoDecline"), false, "the decline checkbox works too")
+  decline:SetChecked(true)
+  Click(decline)
+
+  -- Page 3: automatic reply.
+  Click(nextButton)
+  local shortRadio = Checks(wizard, ns.L.OPT_REPLY_SHORT)[1]
+  Check(shortRadio ~= nil, "the reply choices are on the third page")
+  Click(shortRadio)
+  Equals(ns.Settings.Get("replyMode"), "short", "choosing the short reply saves it")
+  Click(Checks(wizard, ns.L.OPT_REPLY_NONE)[1])
+  Equals(ns.Settings.Get("replyMode"), "none", "off saves too")
+
+  -- Page 4: finish.
+  Click(nextButton)
+  Equals(nextButton.text, ns.L.WIZ_FINISH, "the last page offers Finish")
+  local minimapCheck = Checks(wizard, ns.L.OPT_SHOW_MINIMAP)[1]
+  minimapCheck:SetChecked(false)
+  Click(minimapCheck)
+  Equals(ns.Settings.Get("showMinimap"), false, "the minimap checkbox works")
+  minimapCheck:SetChecked(true)
+  Click(minimapCheck)
+  Equals(ns.Settings.Get("community.guild.send"), false, "the wizard never switches sharing on")
+  Equals(ns.Consent.Active(), false, "and never confirms the community notice")
+  Click(back)
+  Equals(nextButton.text, ns.L.WIZ_NEXT, "Back returns to a page with Next")
+  Click(nextButton)
+  Click(nextButton)
+  Check(not wizard:IsShown(), "Finish closes the wizard")
+  wizard._scripts.OnHide(wizard)
+  Equals(ns.Settings.Get("setupDone"), true, "closing the wizard finishes the setup")
+
+  -- It never appears again by itself, but /bb setup brings it back.
+  smokeTimers = {}
+  loginFrame._scripts.OnEvent(loginFrame, "PLAYER_LOGIN")
+  RunTimers(2)
+  Check(not wizard:IsShown(), "after the first run the wizard stays closed")
+  Run("setup")
+  Check(wizard:IsShown(), "/bb setup opens it again")
+  wizard:Hide()
+
+  -- Settings tab: the reply control and a way back into the wizard.
+  Run("")
+  Click(ButtonByText(ns.L.TAB_SETTINGS))
+  local settings = TabContent(function(f) return f.kind == "Button" and f.text == ns.L.OPT_RUN_SETUP end)
+  Check(settings ~= nil, "the settings tab has the setup button")
+  Click(Checks(settings, ns.L.OPT_REPLY_LABELS)[1])
+  Equals(ns.Settings.Get("replyMode"), "labels", "the settings tab sets the reply mode")
+  Click(Checks(settings, ns.L.OPT_REPLY_NONE)[1])
+  Equals(ns.Settings.Get("replyMode"), "none", "and turns it off")
+  Click(Button(settings, ns.L.OPT_RUN_SETUP))
+  Check(wizard:IsShown(), "the setup button opens the wizard")
+  wizard:Hide()
+  Run("")
+
+  -- The reply listens for whispers through the client's events.
+  local whisperFrame
+  for _, frame in ipairs(frames) do
+    if frame.events and frame.events.CHAT_MSG_WHISPER then whisperFrame = frame end
+  end
+  Check(whisperFrame ~= nil, "whispers are listened to for the automatic reply")
+  Check(chatFilters.CHAT_MSG_WHISPER_INFORM ~= nil, "the echo of an automatic reply is filtered")
+
+  -- /bb check: features, then the loopback test of the sharing connection.
+  local communityFrame
+  for _, frame in ipairs(frames) do
+    if frame.events and frame.events.CHAT_MSG_ADDON then communityFrame = frame end
+  end
+  smokeSent = {}
+  local lines = Run("check")
+  Contains(lines[1], ns.L.CHECK_HEADER, "the check starts with its header")
+  local function Line(label)
+    for _, line in ipairs(lines) do if line:find(label, 1, true) then return line end end
+    return ""
+  end
+  Contains(Line(ns.L.CHECK_CHAT), ns.L.CHECK_OK, "the chat filter is found")
+  Contains(Line(ns.L.CHECK_MENU), ns.L.CHECK_OK, "the right-click menu API is found")
+  Contains(Line(ns.L.CHECK_ADDON), ns.L.CHECK_OK, "addon messages are found")
+  Contains(Line(ns.L.CHECK_DROPDOWN), ns.L.CHECK_MISSING, "a missing feature is named (the stub has no dropdown menu)")
+  Contains(Line(ns.L.CHECK_COMPRESS), ns.L.CHECK_OPTIONAL, "an optional feature is marked as optional")
+  Contains(lines[#lines], ns.L.CHECK_LOOPBACK_RUN, "the loopback test is announced")
+  local probe = smokeSent[#smokeSent]
+  Check(probe ~= nil and probe.text:match("^T1" .. string.char(9) .. "%x%x%x%x%x%x%x%x$") ~= nil, "a test message was whispered")
+  Equals(probe and probe.target, "Self Char", "to the player's own character")
+  Equals(probe and probe.channel, "WHISPER", "as an addon whisper")
+  printed = {}
+  communityFrame._scripts.OnEvent(communityFrame, "CHAT_MSG_ADDON", Const.COMMUNITY_PREFIX, probe.text, "WHISPER", "Self Char")
+  Contains(LastPrinted(), ns.L.CHECK_LOOPBACK_OK, "when the message comes back the connection is reported as working")
+
+  -- Nothing comes back: after three seconds the failure is explained.
+  smokeSent, smokeTimers = {}, {}
+  Run("check")
+  printed = {}
+  RunTimers(3)
+  Contains(LastPrinted(), string.format(ns.L.CHECK_LOOPBACK_FAIL, ns.L.CHECK_NOECHO), "silence fails the test with its reason")
 end
 
 -- Context menu: the player menus are hooked, and a hook adds the entries.
