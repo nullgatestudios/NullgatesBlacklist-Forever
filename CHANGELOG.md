@@ -4,6 +4,10 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-16
+### Fixed
+- Blackbook failed to load its saved data on the game client because of a missing random-number function. It now starts normally.
+
 ## [0.2.0] - 2026-11-16
 ### Added
 - Chat from ignored players is hidden in every channel. A hidden whisper is announced at most once a minute per person.

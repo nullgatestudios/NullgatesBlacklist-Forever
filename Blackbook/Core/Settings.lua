@@ -74,12 +74,16 @@ end
 local seeded = false
 
 local function RandomHex(byteCount)
+  -- The WoW client seeds math.random itself and has no math.randomseed, so
+  -- seeding is only done where the function exists (plain Lua, tests).
   if not seeded then
     seeded = true
-    local seed = 0
-    if type(time) == "function" then seed = seed + time() end
-    if type(GetTime) == "function" then seed = seed + math.floor(GetTime() * 100000) end
-    math.randomseed(seed)
+    if type(math.randomseed) == "function" then
+      local seed = 0
+      if type(time) == "function" then seed = seed + time() end
+      if type(GetTime) == "function" then seed = seed + math.floor(GetTime() * 100000) end
+      math.randomseed(seed)
+    end
   end
   local parts = {}
   for index = 1, byteCount do
