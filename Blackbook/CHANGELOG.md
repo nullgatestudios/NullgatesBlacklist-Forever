@@ -4,6 +4,10 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-16
+### Fixed
+- The Save and Cancel buttons in the editor could not be clicked because the comment box covered them. The window is now tall enough and its layout can no longer overlap.
+
 ## [0.3.0] - 2026-11-16
 ### Added
 - A proper editor window for records: choose Ignore or Warn, pick reasons from a dropdown (a checkbox list is used if the client has no dropdown), write a comment with a live character counter. Save stays disabled until the entry is valid.

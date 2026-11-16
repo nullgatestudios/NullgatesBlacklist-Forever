@@ -62,29 +62,36 @@ local function Build()
   state.hint = Widgets.Label(frame, "", "GameFontHighlightSmall")
   state.counter = Widgets.Label(frame, "", "GameFontDisableSmall")
 
-  local nameLabel = Widgets.Label(frame, Text("EDITOR_NAME"))
-  nameLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -34)
-  state.nameBox:SetPoint("TOPLEFT", nameLabel, "BOTTOMLEFT", 6, -4)
+  -- Every widget is placed from the top of the frame by one running offset,
+  -- and the frame height is the sum, so the content can never overlap the
+  -- buttons (the multi-line comment box would otherwise swallow their clicks).
+  local LEFT, ROW_LABEL, FOOTER = 20, 20, 36
+  local y = 34
+  local function Place(widget, indent, height)
+    widget:SetPoint("TOPLEFT", frame, "TOPLEFT", LEFT + indent, -y)
+    y = y + height
+  end
 
-  local verdictLabel = Widgets.Label(frame, Text("EDITOR_VERDICT"))
-  verdictLabel:SetPoint("TOPLEFT", nameLabel, "BOTTOMLEFT", 0, -34)
-  state.group.buttons[1].button:SetPoint("TOPLEFT", verdictLabel, "BOTTOMLEFT", -4, -2)
+  Place(Widgets.Label(frame, Text("EDITOR_NAME")), 0, ROW_LABEL)
+  Place(state.nameBox, 6, 32)
+
+  Place(Widgets.Label(frame, Text("EDITOR_VERDICT")), 0, ROW_LABEL)
+  Place(state.group.buttons[1].button, -4, 36)
   state.group:Chain(100)
 
-  local labelsLabel = Widgets.Label(frame, Text("EDITOR_LABELS"))
-  labelsLabel:SetPoint("TOPLEFT", verdictLabel, "BOTTOMLEFT", 0, -36)
-  state.picker.frame:SetPoint("TOPLEFT", labelsLabel, "BOTTOMLEFT", 0, -4)
+  Place(Widgets.Label(frame, Text("EDITOR_LABELS")), 0, ROW_LABEL)
+  Place(state.picker.frame, 0, state.picker.height + 14)
 
-  local commentLabel = Widgets.Label(frame, Text("EDITOR_COMMENT"))
-  commentLabel:SetPoint("TOPLEFT", state.picker.frame, "BOTTOMLEFT", 0, -14)
-  state.area:SetPoint("TOPLEFT", commentLabel, "BOTTOMLEFT", 0, -4)
-  state.counter:SetPoint("TOPRIGHT", state.area, "BOTTOMRIGHT", 0, -4)
+  Place(Widgets.Label(frame, Text("EDITOR_COMMENT")), 0, ROW_LABEL)
+  Place(state.area, 0, 80 + 4)
   state.hint:SetPoint("TOPLEFT", state.area, "BOTTOMLEFT", 0, -4)
+  state.counter:SetPoint("TOPRIGHT", state.area, "BOTTOMRIGHT", 0, -4)
+  y = y + 24
 
   state.save:SetPoint("BOTTOMRIGHT", frame, "BOTTOM", -6, 14)
   state.cancel:SetPoint("BOTTOMLEFT", frame, "BOTTOM", 6, 14)
 
-  frame:SetSize(376, 262 + state.picker.height)
+  frame:SetSize(376, y + FOOTER)
   frame:SetPoint("CENTER")
   frame:SetClampedToScreen(true)
   frame:SetMovable(true)

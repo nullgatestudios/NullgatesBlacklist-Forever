@@ -2,7 +2,7 @@
 ## Title: Blackbook
 ## Notes: Personal blocklist with warnings, chat and request enforcement, and list sharing.
 ## Author: Nullgate Studios
-## Version: 0.3.0
+## Version: 0.3.1
 ## SavedVariables: BlackbookDB
 
 Locale/enUS.lua
