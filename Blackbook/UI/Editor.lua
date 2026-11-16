@@ -53,7 +53,7 @@ local function Build()
   end
   state.picker = Widgets.MultiSelect(frame, items, Refresh, { summary = LabelSummary, width = 220 })
   state.area = Widgets.TextArea(frame, 336, 80, Const.Limits.comment, Refresh)
-  state.save = Widgets.Button(frame, Text("EDITOR_SAVE"), 100, function() Editor.Commit() end, "primary")
+  state.save = Widgets.Button(frame, Text("EDITOR_SAVE"), 100, function() Editor.Commit() end)
   state.cancel = Widgets.Button(frame, Text("EDITOR_CANCEL"), 100, function() frame:Hide() end)
   if not (state.nameBox and state.group and state.picker and state.area and state.save and state.cancel) then
     frame:Hide()

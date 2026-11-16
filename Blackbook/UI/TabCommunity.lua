@@ -65,7 +65,7 @@ local function Build(content)
   -- Controls first, so a missing template fails before anything is placed.
   state.confirm = Widgets.Button(content, Text("COMM_CONFIRM"), 220, function()
     Consent.Confirm()
-  end, "primary")
+  end)
   for _, source in ipairs(SOURCES) do
     for _, direction in ipairs({ "send", "receive" }) do
       local check = Widgets.Checkbox(content, Text(direction == "send" and "COMM_SEND" or "COMM_RECEIVE"),
@@ -94,7 +94,7 @@ local function Build(content)
     state.previewText = #lines > 0 and table.concat(lines, "\n") or Text("COMM_PREVIEW_EMPTY")
     state.previewBox.edit:SetText(state.previewText)
   end)
-  state.revoke = Widgets.Button(content, Text("COMM_REVOKE"), 160, ConfirmRevoke, "danger")
+  state.revoke = Widgets.Button(content, Text("COMM_REVOKE"), 160, ConfirmRevoke)
   state.previewBox = Widgets.CodeBox(content, FULL_WIDTH, 78, 20000)
   if not (state.confirm and state.picker and state.preview and state.revoke and state.previewBox) then
     return nil

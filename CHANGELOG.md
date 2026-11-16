@@ -4,6 +4,11 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-11-16
+### Changed
+- The windows are back in the game's own style, like its built-in dialogs: the framed dark panel with a gold title bar and close button, red panel buttons, standard tick boxes and text fields, and the game's fonts. The flat dark look from 0.9.0 is gone.
+- The tab bar and the buttons are the game's standard buttons again; the active tab is the one that is greyed out.
+
 ## [0.10.0] - 2026-11-16
 ### Added
 - Blackbook now speaks fifteen languages: English, Chinese (Simplified), Spanish, French, Portuguese, Russian, Indonesian, German, Japanese, Turkish, Vietnamese, Korean, Italian, Polish and Ukrainian. Pick one from the language list on the Settings tab or in the setup wizard, or with `/bb lang <code>`. "Automatic" follows your game's language where there is a matching translation.

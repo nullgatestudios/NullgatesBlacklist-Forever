@@ -89,7 +89,7 @@ local function Build()
   state.back = Widgets.Button(frame, Text("WIZ_BACK"), 100, function() Wizard.Go(state.page - 1) end)
   state.next = Widgets.Button(frame, Text("WIZ_NEXT"), 100, function()
     if state.page >= PAGE_COUNT then frame:Hide() else Wizard.Go(state.page + 1) end
-  end, "primary")
+  end)
   if not (welcome and ignore and reply and finish and language and hideChat and autoDecline
     and replyControl and minimap and state.back and state.next) then
     frame:Hide()

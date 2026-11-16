@@ -7,7 +7,6 @@ local Const = ns.Const
 local Events = ns.Events
 local Output = ns.Output
 local Widgets = ns.Widgets
-local Theme = ns.Theme
 
 local Text, Print = Output.Text, Output.Print
 
@@ -37,16 +36,11 @@ local function Build()
   local window = Widgets.Window(name, 670, 520, Const.ADDON_NAME)
   if not window then return nil end
 
-  -- The tab bar: plain text tabs under the title bar, with a thin line below.
-  local divider = window:CreateTexture(nil, "ARTWORK")
-  divider:SetPoint("TOPLEFT", window, "TOPLEFT", 14, -62)
-  divider:SetPoint("TOPRIGHT", window, "TOPRIGHT", -14, -62)
-  divider:SetHeight(1)
-  divider:SetColorTexture(Theme.Unpack(Theme.color.divider))
+  -- The tab bar under the title.
   for index, tab in ipairs(tabs) do
     tab.button = Widgets.TabButton(window, Text(tab.titleKey), TAB_WIDTH, function() Manager.Show(tab.id) end)
     if tab.button then
-      tab.button:SetPoint("TOPLEFT", window, "TOPLEFT", 14 + (index - 1) * (TAB_WIDTH + 4), -35)
+      tab.button:SetPoint("TOPLEFT", window, "TOPLEFT", 14 + (index - 1) * (TAB_WIDTH + 4), -32)
     end
   end
 

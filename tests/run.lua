@@ -50,7 +50,6 @@ Load("Enforce/Chat.lua")
 Load("Enforce/Requests.lua")
 Load("Display/Portrait.lua")
 Load("Display/Tooltip.lua")
-Load("UI/Theme.lua")
 Load("UI/Widgets.lua")
 Load("UI/Editor.lua")
 Load("UI/ContextMenu.lua")
@@ -3007,7 +3006,7 @@ Group("Choice picker", function()
     function widget:CreateFontString() return Stub() end
     function widget:CreateTexture() return Stub() end
     -- every other client call does nothing
-    return setmetatable(widget, { __index = function() return function() end end })
+    return setmetatable(widget, { __index = function(_, key) if key == "Text" then return nil end return function() end end })
   end
   local created = {}
   CreateFrame = function(kind, _, _, template)
@@ -3045,223 +3044,113 @@ Group("Choice picker", function()
   EQ(Widgets.FrameName("BlackbookTestWindow"), "BlackbookTestWindow3", "and again")
 end)
 
--- --- The look: theme and flat widgets (section 9) ----------------------------------------------------------
+-- --- The look: the game's own templates (section 9) ----------------------------------------------------------
 
--- A stand-in for a client frame that records what the widgets do to it.
-local function Pane(kind)
-  local pane = { kind = kind, scripts = {}, textures = {}, shown = true, points = {}, checked = false }
+-- A stand-in for a client frame that records what the widgets ask of it.
+local function Pane(kind, template)
+  local pane = { kind = kind, template = template, scripts = {}, shown = true, checked = false, calls = {} }
   function pane:SetText(text) self.text = text end
+  function pane:GetText() return self.text or "" end
   function pane:SetScript(name, fn) self.scripts[name] = fn end
   function pane:SetChecked(value) self.checked = value and true or false end
   function pane:GetChecked() return self.checked end
-  function pane:Show() self.shown = true end
+  function pane:SetEnabled(value) self.enabledFlag = value and true or false end
+  function pane:Enable() self.enabledFlag = true end
+  function pane:Disable() self.enabledFlag = false end
   function pane:Hide() self.shown = false end
-  function pane:IsShown() return self.shown end
-  function pane:Enable() self.native = "enabled" end
-  function pane:Disable() self.native = "disabled" end
-  function pane:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
-  function pane:SetTextColor(r, g, b) self.textColor = { r, g, b } end
-  function pane:SetPoint(...) self.points[#self.points + 1] = { ... } end
-  function pane:SetHitRectInsets(...) self.hit = { ... } end
-  function pane:GetStringWidth() return 40 end
-  function pane:CreateTexture() local t = Pane("Texture") self.textures[#self.textures + 1] = t return t end
-  function pane:CreateFontString() local f = Pane("FontString") self.textures[#self.textures + 1] = f return f end
+  function pane:CreateTexture() return Pane("Texture") end
+  function pane:CreateFontString() return Pane("FontString") end
   -- every other client call does nothing
-  return setmetatable(pane, { __index = function() return function() end end })
+  return setmetatable(pane, { __index = function(_, key) if key == "Text" then return nil end return function() end end })
 end
 
-Group("Theme", function()
-  local Theme = ns.Theme
-  local c = Theme.color
-  for _, name in ipairs({ "window", "titlebar", "border", "field", "button", "buttonHover", "primary", "text", "muted", "accent" }) do
-    OK(type(c[name]) == "table" and #c[name] >= 3, "the colour " .. name .. " exists")
-  end
-  local r, g, b, a = Theme.Unpack({ 0.1, 0.2, 0.3 })
-  EQ(a, 1, "a colour without alpha is opaque")
-  EQ(r + g + b, 0.1 + 0.2 + 0.3, "Unpack returns the three channels")
-
-  -- Without CreateFont the Blizzard font names are used as they are.
-  local savedCreate = CreateFont
-  CreateFont = nil
-  EQ(Theme.Font("GameFontNormal"), "GameFontNormal", "no CreateFont: the Blizzard font stays")
-  EQ(Theme.Font("SomethingElse"), "SomethingElse", "an unknown font name passes through")
-
-  -- With it, the addon's own fonts are made and mapped.
-  local fonts = {}
-  CreateFont = function(name)
-    local font = { name = name }
-    function font:SetFont(path, size) self.path, self.size = path, size return true end
-    function font:SetTextColor(r2, g2, b2) self.color = { r2, g2, b2 } end
-    function font:SetFontObject(object) self.object = object end
-    fonts[name] = font
-    return font
-  end
-  EQ(Theme.Font("GameFontNormal"), "BlackbookHeader", "the heading font is the addon's own")
-  EQ(Theme.Font("GameFontHighlight"), "BlackbookText", "normal text")
-  EQ(Theme.Font("GameFontHighlightSmall"), "BlackbookSmall", "small text")
-  EQ(Theme.Font("GameFontDisableSmall"), "BlackbookMuted", "muted text")
-  EQ(Theme.Font("GameFontNormalLarge"), "BlackbookTitle", "titles")
-  EQ(Theme.Font("ChatFontNormal"), "ChatFontNormal", "the chat font is left alone")
-  EQ(fonts.BlackbookText.path, "Fonts\\ARIALN.TTF", "Latin and Cyrillic text uses the sans-serif face")
-  EQ(fonts.BlackbookText.size, 13, "at a readable size")
-  EQ(fonts.BlackbookMuted.color[1], c.muted[1], "muted text has the muted colour")
-  EQ(fonts.BlackbookHeader.color[1], c.accent[1], "headings have the accent colour")
-
-  -- Chinese, Japanese and Korean keep the client's own font, which has their glyphs.
-  STANDARD_TEXT_FONT = "Fonts\\client.ttf"
-  ns.Locale.current = "zh"
-  Theme.Fonts()
-  EQ(fonts.BlackbookText.path, "Fonts\\client.ttf", "a CJK language uses the client's standard font")
-  ns.Locale.current = "en"
-  Theme.Fonts()
-  EQ(fonts.BlackbookText.path, "Fonts\\ARIALN.TTF", "and English goes back to the sans-serif face")
-  -- A font file that cannot be loaded falls back to the standard font object.
-  GameFontNormal = { name = "GameFontNormal" }
-  fonts.BlackbookText.SetFont = function() return false end
-  Theme.Fonts()
-  OK(fonts.BlackbookText.object == GameFontNormal, "a font that fails to load falls back to the standard font")
-  GameFontNormal = nil
-  STANDARD_TEXT_FONT = nil
-  ns.Locale.current = nil
-  CreateFont = savedCreate
-  Theme.Fonts()
-
-  -- Fill and Border draw plain textures.
-  local frame = Pane("Frame")
-  local fill = Theme.Fill(frame, c.window)
-  EQ(fill.color[1], c.window[1], "Fill paints the window colour")
-  local border = Theme.Border(frame, c.border)
-  EQ(#frame.textures, 5, "a fill and four border edges")
-  border.SetColor(c.accent)
-  EQ(frame.textures[2].color[1], c.accent[1], "the border can change colour")
-end)
-
-Group("Flat widgets", function()
-  local Widgets, c = ns.Widgets, ns.Theme.color
+Group("Game-style widgets", function()
+  local Widgets = ns.Widgets
   local savedCreate = CreateFrame
-  local panes = {}
-  CreateFrame = function(kind)
-    local pane = Pane(kind)
-    panes[#panes + 1] = pane
-    return pane
-  end
+  CreateFrame = function(kind, _, _, template) return Pane(kind, template) end
   local parent = Pane("Frame")
 
-  -- Button.
+  -- Button: the standard red panel button.
   local clicks = 0
   local button = Widgets.Button(parent, "Save", 100, function() clicks = clicks + 1 end)
-  EQ(button.role, "button", "a button")
-  EQ(button.text, "Save", "has its text")
-  EQ(button:GetText(), "Save", "GetText returns it")
-  local normal = button.textures[1].color
-  EQ(normal[1], c.button[1], "it starts in the neutral colour")
-  button.scripts.OnEnter(button)
-  EQ(button.textures[1].color[1], c.buttonHover[1], "hovering lightens it")
-  button.scripts.OnMouseDown(button)
-  EQ(button.textures[1].color[1], c.buttonDown[1], "pressing darkens it")
-  button.scripts.OnMouseUp(button)
-  button.scripts.OnLeave(button)
-  EQ(button.textures[1].color[1], c.button[1], "leaving restores it")
+  EQ(button.template, "UIPanelButtonTemplate", "a button is the game's panel button")
+  EQ(button.role, "button", "marked as a button")
+  EQ(button.text, "Save", "with its text")
   button.scripts.OnClick(button)
   EQ(clicks, 1, "a click runs the handler")
-  button:SetEnabled(false)
-  EQ(button.native, "disabled", "a disabled button is disabled in the client")
-  EQ(button.textures[1].color[1], c.buttonOff[1], "and looks switched off")
-  button.scripts.OnClick(button)
-  EQ(clicks, 1, "a disabled button ignores clicks")
-  button.scripts.OnEnter(button)
-  EQ(button.textures[1].color[1], c.buttonOff[1], "and does not react to the mouse")
-  button.scripts.OnLeave(button)
-  button:SetEnabled(true)
-  EQ(button.native, "enabled", "it can be enabled again")
-  EQ(button.textures[1].color[1], c.button[1], "and looks normal again")
-  button:SetText("Next")
-  EQ(button.label.text, "Next", "SetText changes the shown text")
+  Widgets.Button(parent, "No handler", 80).scripts.OnClick({})
 
-  local primary = Widgets.Button(parent, "Go", 80, nil, "primary")
-  EQ(primary.textures[1].color[1], c.primary[1], "a primary button is gold")
-  EQ(primary.label.textColor[1], c.primaryText[1], "with dark text")
-  primary.scripts.OnEnter(primary)
-  EQ(primary.textures[1].color[1], c.primaryHover[1], "and a lighter gold on hover")
-  local danger = Widgets.Button(parent, "Delete", 80, nil, "danger")
-  EQ(danger.label.textColor[1], c.danger[1], "a danger button has red text")
-  local ghost = Widgets.Button(parent, "x", 28, nil, "ghost")
-  EQ(ghost.textures[1].color[4], 0, "a ghost button has no background")
-  ghost.scripts.OnEnter(ghost)
-  OK(ghost.textures[1].color[4] > 0, "until the mouse is over it")
-  OK(Widgets.Button(parent, "No handler", 80, nil).scripts.OnClick ~= nil, "a button without a handler is harmless")
-  Widgets.Button(parent, "No handler", 80, nil).scripts.OnClick({})
-
-  -- Checkbox.
+  -- Checkbox: the standard check button; its label is part of it.
   local toggled
   local check = Widgets.Checkbox(parent, "Option", function(self) toggled = self:GetChecked() end)
-  EQ(check.role, "checkbox", "a checkbox")
-  EQ(check.text, "Option", "has its text")
-  EQ(check.label.text, "Option", "shown beside the box")
-  EQ(check.hit[2], -48, "the label is part of the click area")
-  local mark = check.textures[3]
-  EQ(mark.shown, false, "an unticked box shows no mark")
-  check:SetChecked(true)
-  EQ(mark.shown, true, "ticking shows the mark")
-  check:SetChecked(false)
-  EQ(mark.shown, false, "unticking hides it")
+  EQ(check.template, "UICheckButtonTemplate", "a checkbox is the game's check button")
+  EQ(check.role, "checkbox", "marked as a checkbox")
+  EQ(check.text, "Option", "with its text")
   check:SetChecked(true)
   check.scripts.OnClick(check)
   EQ(toggled, true, "a click runs the handler after the state changed")
-  check:SetEnabled(false)
-  EQ(check.native, "disabled", "a disabled checkbox is disabled in the client")
-  EQ(check.label.textColor[1], c.off[1], "and its label is dimmed")
-  check:SetEnabled(true)
-  EQ(check.label.textColor[1], c.text[1], "and back to normal")
-  check.scripts.OnEnter(check)
-  EQ(check.textures[1].color[1], c.accent[1], "the box outlines in the accent colour on hover")
-  check.scripts.OnLeave(check)
-  EQ(check.textures[1].color[1], c.border[1], "and goes back")
+  -- Templates that carry their own label text use it.
+  CreateFrame = function(kind, _, _, template)
+    local pane = Pane(kind, template)
+    pane.Text = Pane("FontString")
+    return pane
+  end
+  local labelled = Widgets.Checkbox(parent, "Labelled", nil)
+  EQ(labelled.Text.text, "Labelled", "a template with its own text part gets the label there")
+  CreateFrame = function(kind, _, _, template) return Pane(kind, template) end
 
-  -- Input boxes show focus.
-  local box = Widgets.InputBox(parent, 120, 20)
-  EQ(box.role, "input", "an input box")
-  box.scripts.OnEditFocusGained(box)
-  EQ(box.textures[2].color[1], c.accent[1], "its border turns to the accent colour while it has focus")
-  box.scripts.OnEditFocusLost(box)
-  EQ(box.textures[2].color[1], c.border[1], "and back when it loses it")
+  -- Input box and text area.
+  local changes = 0
+  local box = Widgets.InputBox(parent, 120, 20, function() changes = changes + 1 end)
+  EQ(box.template, "InputBoxTemplate", "an input box is the game's input box")
+  EQ(box.role, "input", "marked as an input")
+  box.scripts.OnTextChanged(box)
+  EQ(changes, 1, "typing runs the change handler")
   local area = Widgets.TextArea(parent, 200, 80, 255)
   EQ(area.edit.role, "textedit", "a text area has its edit box marked")
 
-  -- Tabs.
+  -- Tabs: a panel button; the active one is switched off.
   local picked
   local tab = Widgets.TabButton(parent, "Lists", 88, function() picked = true end)
-  EQ(tab.role, "tab", "a tab")
-  EQ(tab.text, "Lists", "has its text")
-  EQ(tab.textures[2].shown, false, "an inactive tab has no accent line")
-  EQ(tab.label.textColor[1], c.muted[1], "and muted text")
+  EQ(tab.template, "UIPanelButtonTemplate", "a tab is a panel button")
+  EQ(tab.role, "tab", "marked as a tab")
   tab:SetActive(true)
-  EQ(tab.textures[2].shown, true, "the active tab has an accent line")
-  EQ(tab.label.textColor[1], c.text[1], "and bright text")
+  EQ(tab.enabledFlag, false, "the active tab is switched off")
+  EQ(tab.active, true, "and says so")
   tab:SetActive(false)
-  EQ(tab.textures[2].shown, false, "and loses it again")
-  tab.scripts.OnEnter(tab)
-  EQ(tab.textures[1].shown, true, "hovering an inactive tab highlights it")
-  tab.scripts.OnLeave(tab)
-  EQ(tab.textures[1].shown, false, "and leaving removes it")
+  EQ(tab.enabledFlag, true, "an inactive tab can be clicked")
   tab.scripts.OnClick(tab)
   OK(picked, "a click runs the handler")
 
-  -- Windows.
+  -- Windows: the standard framed panel.
   UIParent = Pane("Frame")
   local window = Widgets.Window("BlackbookWindowTest", 400, 300, "Title")
-  EQ(window.role, "window", "a window")
-  EQ(window.titleText.text, "Title", "with its title")
-  window:SetTitle("Other")
-  EQ(window.titleText.text, "Other", "the title can change")
-  OK(window.CloseButton ~= nil, "it has a close button")
-  EQ(window.CloseButton.text, "\195\151", "showing a multiplication sign")
-  window:Show()
-  window.CloseButton.scripts.OnClick(window.CloseButton)
-  EQ(window:IsShown(), false, "which closes the window")
-  OK(window.scripts.OnDragStart ~= nil and window.scripts.OnDragStop ~= nil, "the window can be dragged")
+  EQ(window.template, "BasicFrameTemplateWithInset", "a window is the game's framed panel")
+  EQ(window.role, "window", "marked as a window")
+  OK(window.scripts.OnDragStart ~= nil and window.scripts.OnDragStop ~= nil, "it can be dragged")
+  -- A template without SetTitle keeps its title in a child; the window gets the call anyway.
+  CreateFrame = function(kind, _, _, template)
+    local pane = Pane(kind, template)
+    -- this template has no SetTitle of its own
+    getmetatable(pane).__index = function(_, key)
+      if key == "SetTitle" or key == "Text" then return nil end
+      return function() end
+    end
+    pane.TitleContainer = { TitleText = Pane("FontString") }
+    return pane
+  end
+  local older = Widgets.Window("BlackbookWindowTest2", 400, 300, "Old style")
+  EQ(older.TitleContainer.TitleText.text, "Old style", "the title goes into the template's title text")
+  older:SetTitle("Changed")
+  EQ(older.TitleContainer.TitleText.text, "Changed", "and can change")
   UIParent = nil
 
+  -- A client without the templates gives nothing back, so the caller can fall back.
+  CreateFrame = function() return nil end
+  EQ(Widgets.Button(parent, "x", 10), nil, "no button template: nil")
+  EQ(Widgets.Checkbox(parent, "x"), nil, "no checkbox template: nil")
+  EQ(Widgets.InputBox(parent, 10, 5), nil, "no input template: nil")
+  EQ(Widgets.Window("BlackbookWindowTest3", 10, 10, "x"), nil, "no window template: nil")
   CreateFrame = savedCreate
 end)
 

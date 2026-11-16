@@ -117,7 +117,7 @@ local function Build(content)
     else
       Print(Text("LISTS_REMOVE_HINT"))
     end
-  end, "danger")
+  end)
   if not state.remove then return nil end
   state.remove:SetPoint("TOPLEFT", content, "TOPLEFT", RIGHT, -(y + 10))
   local hint = Widgets.Label(content, Text("LISTS_REMOVE_HINT"), "GameFontDisableSmall")
