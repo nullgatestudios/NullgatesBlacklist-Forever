@@ -4,6 +4,21 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-16
+### Added
+- Automatic, silent sharing with friends and guild. After you confirm the notice once on the new **Community** tab and switch a source on, Blackbook reports your Ignore entries in the background and receives reports from others. No popups, no prompts and no chat output. What is sent is a hash of the player's name, the reason labels, a day number and an anonymous token, never names, comments or your own name. You see exactly what would be sent with the preview button.
+- Friends and guild each have their own send and receive switch. They are kept apart from each other's data and from the global channel (not built yet), which will never be mixed in.
+- Reports only ever add a notice. The new **Rules** tab lets you decide per source, reason and tier whether they mean warn or ignore. A rule that ignores asks for confirmation first.
+- Tooltips show one line per source, for example "Guild: 7 players reported this player (Elevated)". The chat icon, target mark and tooltip use the notice look.
+- "This flag is wrong" in the right-click menu hides a community flag on this install. The Rules tab lists hidden flags and brings them back with a click.
+- "Revoke and delete" stops all sharing, withdraws your reports where possible and deletes everything received.
+
+### Changed
+- The tab bar fits seven tabs. The German name of the Settings tab is now "Optionen".
+
+### Removed
+- The "Send my list" menu entry and the in-game list offers with their popup. Automatic sharing replaces them. List codes (export and import on the Share tab) stay.
+
 ## [0.6.0] - 2026-11-16
 ### Added
 - Share your list as a code. The new **Share** tab turns your records into a list code (`BK1...`) that you can copy, paste anywhere and import on another account. You choose the list name, which reasons are included and whether your comments go with it.

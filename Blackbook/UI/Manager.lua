@@ -13,6 +13,7 @@ local Text, Print = Output.Text, Output.Print
 local Manager = {}
 ns.Manager = Manager
 
+local TAB_WIDTH = 88 -- seven tabs have to fit the window
 local tabs = {}      -- { id =, titleKey =, build =, button =, frame =, ui = }
 local frame          -- the window, built on first use
 local activeId
@@ -54,9 +55,9 @@ local function Build()
   SetTitle(window, Const.ADDON_NAME)
 
   for index, tab in ipairs(tabs) do
-    tab.button = Widgets.Button(window, Text(tab.titleKey), 120, function() Manager.Show(tab.id) end)
+    tab.button = Widgets.Button(window, Text(tab.titleKey), TAB_WIDTH, function() Manager.Show(tab.id) end)
     if tab.button then
-      tab.button:SetPoint("TOPLEFT", window, "TOPLEFT", 14 + (index - 1) * 124, -32)
+      tab.button:SetPoint("TOPLEFT", window, "TOPLEFT", 14 + (index - 1) * (TAB_WIDTH + 4), -32)
     end
   end
 

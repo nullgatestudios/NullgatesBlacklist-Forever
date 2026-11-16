@@ -54,7 +54,13 @@ Load("UI/ContextMenu.lua")
 Load("Data/Query.lua")
 Load("Share/Wire.lua")
 Load("Share/Codec.lua")
-Load("Share/Transfer.lua")
+Load("Community/Hash.lua")
+Load("Community/Report.lua")
+Load("Community/Aggregate.lua")
+Load("Community/Consent.lua")
+Load("Community/Rules.lua")
+Load("Community/Roster.lua")
+Load("Community/Net.lua")
 Load("UI/Manager.lua")
 Load("UI/TabList.lua")
 Load("UI/TabSettings.lua")
@@ -629,11 +635,11 @@ Group("Context menu", function()
   EQ(ContextMenu.Build(root, { unit = "target" }), true, "a player unit gets entries")
   EQ(root.items[1].kind, "divider", "a divider comes first")
   EQ(root.items[2].text, L.CTX_TITLE, "then the title")
-  EQ(ButtonTexts(root), L.CTX_IGNORE .. "|" .. L.CTX_WARN .. "|" .. L.CTX_SEND, "new player: ignore, warn and send")
+  EQ(ButtonTexts(root), L.CTX_IGNORE .. "|" .. L.CTX_WARN, "new player: ignore and warn")
 
   root = StubRoot()
   EQ(ContextMenu.Build(root, { name = "Chat Guy-Realm" }), true, "a chat name gets entries")
-  EQ(ButtonTexts(root), L.CTX_IGNORE .. "|" .. L.CTX_WARN .. "|" .. L.CTX_SEND, "name context works like a unit")
+  EQ(ButtonTexts(root), L.CTX_IGNORE .. "|" .. L.CTX_WARN, "name context works like a unit")
 
   root = StubRoot()
   EQ(ContextMenu.Build(root, { unit = "player" }), false, "own character gets nothing")
@@ -653,7 +659,7 @@ Group("Context menu", function()
   ns.Records.Save("Menu Target", "ignore", { scam = true }, "x")
   root = StubRoot()
   ContextMenu.Build(root, { unit = "target" })
-  EQ(ButtonTexts(root), L.CTX_EDIT .. "|" .. L.CTX_REMOVE .. "|" .. L.CTX_SEND, "known player: edit, remove and send")
+  EQ(ButtonTexts(root), L.CTX_EDIT .. "|" .. L.CTX_REMOVE, "known player: edit and remove")
   local opened
   local realOpen = ns.Editor.Open
   ns.Editor.Open = function(name) opened = name end
@@ -670,7 +676,7 @@ Group("Context menu", function()
   }, { scam = "ignore" })
   root = StubRoot()
   ContextMenu.Build(root, { unit = "target" })
-  EQ(ButtonTexts(root), L.CTX_IGNORE .. "|" .. L.CTX_WARN .. "|" .. L.CTX_ADOPT .. "|" .. L.CTX_SEND, "list-only player: adopt is offered")
+  EQ(ButtonTexts(root), L.CTX_IGNORE .. "|" .. L.CTX_WARN .. "|" .. L.CTX_ADOPT, "list-only player: adopt is offered")
   local verdictArg, prefillArg
   ns.Editor.Open = function(name, verdict, prefill) opened, verdictArg, prefillArg = name, verdict, prefill end
   root.items[5].fn()
@@ -1483,24 +1489,559 @@ Group("Subscriptions", function()
   EQ(Subs.Rule("aaaa", "griefing"), "notice", "the rule of a missing list is the default")
 end)
 
--- --- Sharing: in-game transfer (section 7.4) ---------------------------------------------------
+-- --- Community: Hash (section 8.2) -----------------------------------------------------------
 
-Group("Transfer", function()
-  local Transfer, Subs, Const, Wire = ns.Transfer, ns.Subscriptions, ns.Const, ns.Wire
-  local L = ns.L
-  C_EncodingUtil = nil
+Group("Hash", function()
+  local Hash = ns.Hash
+  -- Published FNV-1a 32-bit test vectors.
+  EQ(string.format("%08x", Hash.Fnv32("", 2166136261)), "811c9dc5", "fnv-1a of nothing is the offset basis")
+  EQ(string.format("%08x", Hash.Fnv32("a", 2166136261)), "e40c292c", "fnv-1a of 'a'")
+  EQ(string.format("%08x", Hash.Fnv32("foobar", 2166136261)), "bf9cf968", "fnv-1a of 'foobar'")
+
+  local hash = Hash.Target("some player", 100)
+  OK(hash:match("^%x+$") ~= nil and #hash == 16 and hash == hash:lower(), "a target hash is 16 lowercase hex digits")
+  EQ(Hash.Target("some player", 100), hash, "the hash is deterministic")
+  OK(Hash.Target("some player", 101) ~= hash, "another season gives another hash")
+  OK(Hash.Target("other player", 100) ~= hash, "another player gives another hash")
+  OK(hash:sub(1, 8) ~= hash:sub(9, 16), "the two halves are independent hashes")
+
+  local secret = "0123456789abcdef0123456789abcdef"
+  local token = Hash.Token(secret, hash)
+  OK(token:match("^%x%x%x%x%x%x%x%x$") ~= nil, "a token is 8 hex digits")
+  EQ(Hash.Token(secret, hash), token, "a token is stable for one install and target")
+  OK(Hash.Token(secret, Hash.Target("other player", 100)) ~= token, "tokens differ per target")
+  OK(Hash.Token("fedcba9876543210fedcba9876543210", hash) ~= token, "tokens differ per install")
+
+  EQ(Hash.Day(86400 * 5 + 10), 5, "a day number")
+  EQ(Hash.Day(86400 * 5 - 1), 4, "the day before midnight")
+  EQ(Hash.Season(90 * 86400 * 3 + 5), 3, "a season number")
+  EQ(Hash.Season(90 * 86400 * 3 - 1), 2, "the last second of a season")
+  local candidates = Hash.Candidates("some player", 90 * 86400 * 4 + 1)
+  EQ(candidates[1], Hash.Target("some player", 4), "the current season is tried first")
+  EQ(candidates[2], Hash.Target("some player", 3), "and the previous one")
+  EQ(Hash.ServerTime(), 1700000000, "without a server time call the local clock is used")
+  GetServerTime = function() return 42 end
+  EQ(Hash.ServerTime(), 42, "the server time call is preferred")
+  GetServerTime = nil
+end)
+
+-- --- Community: Aggregate and tiers (sections 8.3, 8.4) ---------------------------------------
+
+local TODAY = 20000
+local function HashOf(n) return string.format("%08x%08x", n, n * 7 + 1) end
+local function TokenOf(n) return string.format("%08x", n) end
+
+-- Files `count` distinct reporters for a target and label at the given day.
+local function Reports(hashValue, labelMask, count, day, source, firstToken)
+  for index = 1, count do
+    ns.Aggregate.Add(hashValue, labelMask, day, TokenOf((firstToken or 0) + index), source or "guild")
+  end
+  ns.Events:Fire("COMMUNITY_CHANGED") -- the resolver caches, so tell it the data changed
+end
+
+Group("Aggregate", function()
+  local Aggregate, Const = ns.Aggregate, ns.Const
+  local db = FreshDb()
+  local H = HashOf(1)
+  local SCAM, SPAM = Const.LabelValue.scam, Const.LabelValue.spam
+
+  EQ(Aggregate.Add(H, SCAM + SPAM, TODAY, TokenOf(1), "guild"), 2, "one report with two labels adds two entries")
+  EQ(Aggregate.Add(H, SCAM, TODAY - 5, TokenOf(1), "guild"), 0, "the same token again adds nothing")
+  EQ(db.community.reports.guild[H].scam[TokenOf(1)], TODAY, "the first-seen day wins")
+  OK(db.community.reports.guild[H].spam ~= nil, "both labels are stored")
+  EQ(Aggregate.Add(H, SCAM, TODAY, TokenOf(1), "friends"), 1, "the same token in another source is separate")
+  EQ(db.community.reports.friends[H].scam[TokenOf(1)], TODAY, "and stored under that source")
+
+  -- Input is validated again here, even though the network layer checks it.
+  EQ(Aggregate.Add("ABCDEF0123456789", SCAM, TODAY, TokenOf(2), "guild"), 0, "an upper-case hash is refused")
+  EQ(Aggregate.Add("abc", SCAM, TODAY, TokenOf(2), "guild"), 0, "a short hash is refused")
+  EQ(Aggregate.Add(H, SCAM, TODAY, "XYZ12345", "guild"), 0, "a non-hex token is refused")
+  EQ(Aggregate.Add(H, SCAM, TODAY, TokenOf(2), "nowhere"), 0, "an unknown source is refused")
+  EQ(Aggregate.Add(H, 0, TODAY, TokenOf(2), "guild"), 0, "mask 0 is refused")
+  EQ(Aggregate.Add(H, 512, TODAY, TokenOf(2), "guild"), 0, "mask 512 is refused")
+  EQ(Aggregate.Add(H, 1.5, TODAY, TokenOf(2), "guild"), 0, "a fractional mask is refused")
+  EQ(Aggregate.Add(H, SCAM, "today", TokenOf(2), "guild"), 0, "a non-numeric day is refused")
+
+  -- Tier boundaries for friends and guild: 3/90, 7/30, 10/7, 15/1.
+  local function TierOf(count, day, extra)
+    FreshDb()
+    local target = HashOf(2)
+    Reports(target, SCAM, count, day)
+    return (Aggregate.Tier(target, "scam", { "guild" }, TODAY))
+  end
+  EQ(TierOf(2, TODAY), 0, "two reporters are no flag")
+  EQ(TierOf(3, TODAY), 1, "three reporters in 90 days: tier 1")
+  EQ(TierOf(3, TODAY - 89), 1, "a report from day 89 still counts")
+  EQ(TierOf(3, TODAY - 90), 0, "a report from day 90 no longer counts")
+  EQ(TierOf(6, TODAY - 20), 1, "six in 30 days stay tier 1")
+  EQ(TierOf(7, TODAY - 20), 2, "seven in 30 days: tier 2")
+  EQ(TierOf(7, TODAY - 29), 2, "day 29 is inside the 30 day window")
+  EQ(TierOf(7, TODAY - 30), 1, "day 30 is outside it")
+  EQ(TierOf(9, TODAY - 3), 2, "nine in 7 days are still tier 2")
+  EQ(TierOf(10, TODAY - 3), 3, "ten in 7 days: tier 3")
+  EQ(TierOf(10, TODAY - 6), 3, "day 6 is inside the 7 day window")
+  EQ(TierOf(10, TODAY - 7), 2, "day 7 is outside it")
+  EQ(TierOf(14, TODAY), 3, "fourteen today are tier 3")
+  EQ(TierOf(15, TODAY), 4, "fifteen today: tier 4")
+  EQ(TierOf(15, TODAY - 1), 3, "fifteen yesterday are not tier 4")
+
+  -- Reporters are counted once across friends and guild, and the groups stay apart.
+  FreshDb()
+  local T = HashOf(3)
+  Reports(T, SCAM, 2, TODAY, "guild", 0)         -- tokens 1,2
+  Reports(T, SCAM, 2, TODAY, "friends", 1)       -- tokens 2,3: token 2 is the same reporter
+  EQ((Aggregate.Tier(T, "scam", { "guild" }, TODAY)), 0, "two guild reporters alone are no flag")
+  EQ((Aggregate.Tier(T, "scam", { "friends" }, TODAY)), 0, "two friend reporters alone are no flag")
+  local tier, count = Aggregate.Tier(T, "scam", { "guild", "friends" }, TODAY)
+  EQ(count, 3, "a reporter who told both sources counts once")
+  EQ(tier, 1, "so three distinct reporters make a flag")
+  EQ((Aggregate.Tier(T, "scam", { "global" }, TODAY)), 0, "nothing in global")
+  Reports(T, SCAM, 5, TODAY, "global", 100)
+  EQ((Aggregate.Tier(T, "scam", { "global" }, TODAY)), 1, "five global reporters: global tier 1")
+  EQ((Aggregate.Tier(T, "scam", { "guild", "global" }, TODAY)), 0, "friends/guild and global are never combined")
+  Reports(T, SCAM, 4, TODAY, "global", 200)
+  EQ((Aggregate.Tier(T, "scam", { "global" }, TODAY)), 1, "nine global reporters are still below the global tier 2")
+  EQ((Aggregate.Tier(T, "scam", { "guild" }, TODAY)), 0, "global reports never count for the guild")
+  EQ((Aggregate.Tier(T, "scam", {}, TODAY)), 0, "no sources: no tier")
+
+  -- Summary.
+  FreshDb()
+  local S = HashOf(4)
+  EQ(Aggregate.Summary(S, { "guild" }, TODAY), nil, "nothing known: no summary")
+  Reports(S, SCAM, 3, TODAY, "guild", 0)
+  Reports(S, SPAM, 3, TODAY, "guild", 1) -- tokens 2..4: overlaps with the scam reporters
+  local summary = Aggregate.Summary(S, { "guild" }, TODAY)
+  EQ(summary.tier, 1, "the summary's tier is the best label tier")
+  EQ(summary.count, 4, "reporters are counted once across labels")
+  OK(summary.labels.scam and summary.labels.spam, "both labels reached a tier")
+  Reports(HashOf(5), SCAM, 2, TODAY, "guild", 0)
+  EQ(Aggregate.Summary(HashOf(5), { "guild" }, TODAY), nil, "a target below tier 1 has no summary")
+
+  -- Retraction is per source.
+  FreshDb()
+  local R = HashOf(6)
+  Aggregate.Add(R, SCAM + SPAM, TODAY, TokenOf(1), "guild")
+  Aggregate.Add(R, SCAM, TODAY, TokenOf(1), "friends")
+  EQ(Aggregate.Retract(R, TokenOf(9), "guild"), false, "an unknown token retracts nothing")
+  EQ(Aggregate.Retract(R, TokenOf(1), "guild"), true, "a token is retracted")
+  EQ(ns.db.community.reports.guild[R], nil, "the empty target is dropped")
+  OK(ns.db.community.reports.friends[R] ~= nil, "the other source keeps its report")
+  EQ(Aggregate.Retract(R, TokenOf(1), "guild"), false, "retracting twice does nothing")
+
+  -- Expiry and the counters.
+  FreshDb()
+  Aggregate.Add(HashOf(7), SCAM, TODAY - 100, TokenOf(1), "guild")
+  Aggregate.Add(HashOf(7), SCAM, TODAY - 90, TokenOf(2), "guild")
+  Aggregate.Add(HashOf(7), SCAM, TODAY - 91, TokenOf(3), "guild")
+  Aggregate.Add(HashOf(8), SCAM, TODAY - 200, TokenOf(1), "friends")
+  Aggregate.Expire(TODAY)
+  local tokens, targets = Aggregate.Counts()
+  EQ(tokens, 1, "only the report from day 90 is kept")
+  EQ(targets, 1, "the target with only old reports is gone")
+  EQ(ns.db.community.reports.friends[HashOf(8)], nil, "its table is gone as well")
+
+  -- Caps.
+  FreshDb()
+  local C = HashOf(9)
+  for index = 1, 55 do Aggregate.Add(C, SCAM, TODAY - 60 + index, TokenOf(index), "guild") end
+  local kept = 0
+  for _ in pairs(ns.db.community.reports.guild[C].scam) do kept = kept + 1 end
+  EQ(kept, 50, "at most 50 tokens per target and label")
+  EQ(ns.db.community.reports.guild[C].scam[TokenOf(1)], nil, "the oldest are dropped first")
+  OK(ns.db.community.reports.guild[C].scam[TokenOf(55)] ~= nil, "the newest is kept")
+  local old = Const.Community.targetCap
+  Const.Community.targetCap = 3
+  FreshDb()
+  for index = 1, 5 do Aggregate.Add(HashOf(100 + index), SCAM, TODAY, TokenOf(1), "guild") end
+  local _, targetCount = Aggregate.Counts()
+  EQ(targetCount, 3, "no new targets above the cap")
+  EQ(Aggregate.Add(HashOf(100 + 1), SCAM, TODAY, TokenOf(2), "guild"), 1, "an existing target still takes reports")
+  Aggregate.Add(HashOf(200), SCAM, TODAY, TokenOf(1), "friends")
+  local _, friendTargets = Aggregate.Counts()
+  EQ(friendTargets, 4, "the cap is per source")
+  Const.Community.targetCap = old
+
+  local oldTotal = Const.Community.totalCap
+  Const.Community.totalCap = 40
+  FreshDb()
+  for index = 1, 60 do Aggregate.Add(HashOf(300 + index), SCAM, TODAY - 100 + index, TokenOf(1), "guild") end
+  local total = Aggregate.Counts()
+  OK(total <= 40, "the whole store stays under its cap (" .. total .. ")")
+  EQ(ns.db.community.reports.guild[HashOf(300 + 1)], nil, "the oldest reports are dropped first when it is full")
+  OK(ns.db.community.reports.guild[HashOf(300 + 60)] ~= nil, "the newest survive")
+  Const.Community.totalCap = oldTotal
+
+  -- Counters always match a recount.
+  FreshDb()
+  for index = 1, 30 do Aggregate.Add(HashOf(400 + index % 7), SCAM + SPAM, TODAY - index, TokenOf(index), index % 2 == 0 and "guild" or "friends") end
+  Aggregate.Retract(HashOf(400 + 3), TokenOf(3), "friends")
+  Aggregate.Expire(TODAY + 80)
+  local counted = 0
+  for _, byHash in pairs(ns.db.community.reports) do
+    for _, byLabel in pairs(byHash) do
+      for _, byToken in pairs(byLabel) do for _ in pairs(byToken) do counted = counted + 1 end end
+    end
+  end
+  EQ(Aggregate.Counts(), counted, "the counter equals a recount")
+  Aggregate.Purge()
+  local after, afterTargets = Aggregate.Counts()
+  EQ(after + afterTargets, 0, "purge empties the store")
+end)
+
+-- --- Community: Report and the wire format (sections 8.6, 8.7) --------------------------------
+
+Group("Report", function()
+  local Report, Hash, Const = ns.Report, ns.Hash, ns.Const
+  local now = 1700000000
+  local today = Hash.Day(now)
+  local secret = "0123456789abcdef0123456789abcdef"
+  local share = { scam = true, spam = true, toxicity = true }
+  local function Rec(name, verdict, labels, created)
+    return { name = name, verdict = verdict, labels = labels, created = created, comment = "private comment" }
+  end
+
+  local items = Report.Build({
+    Rec("Scam Guy", "ignore", { scam = true, other = true }, now - 3 * 86400),
+    Rec("Warned Guy", "warn", { scam = true }, now),
+    Rec("Private Guy", "ignore", { private_dispute = true, other = true }, now),
+    Rec("Old Guy", "ignore", { spam = true }, now - 400 * 86400),
+    Rec("Future Guy", "ignore", { toxicity = true }, now + 30 * 86400),
+    Rec("Fresh Guy", "ignore", { scam = true, spam = true }, nil),
+  }, { shareLabels = share, secret = secret, now = now })
+  EQ(#items, 4, "only ignore records with a shareable label are reported")
+  local byKey = {}
+  for _, item in ipairs(items) do byKey[item.key] = item end
+  EQ(byKey["warned guy"], nil, "a warn record is not reported")
+  EQ(byKey["private guy"], nil, "a record with only private labels is not reported")
+  EQ(byKey["scam guy"].mask, Const.LabelValue.scam, "labels that are not shared are left out of the mask")
+  EQ(byKey["scam guy"].day, today - 3, "the record's day is used")
+  EQ(byKey["old guy"].day, today - 89, "an old record is clamped to the window")
+  EQ(byKey["future guy"].day, today, "a day in the future is clamped to today")
+  EQ(byKey["fresh guy"].day, today, "a record without a date counts as today")
+  EQ(byKey["scam guy"].hash, Hash.Target("scam guy", Hash.Season(now)), "the hash is of the lower-case key")
+  EQ(byKey["scam guy"].token, Hash.Token(secret, byKey["scam guy"].hash), "the token follows from secret and hash")
+  for index = 2, #items do OK(items[index - 1].hash <= items[index].hash, "items are sorted by hash") end
+  for _, item in ipairs(items) do
+    OK(not (item.hash .. item.token):find("[^0-9a-f]"), "an item carries nothing but hex")
+  end
+
+  -- Messages: six to a message, never above 255 bytes, and no names or comments.
+  local many = {}
+  for index = 1, 14 do
+    many[index] = { key = "p" .. index, hash = HashOf(index), mask = 511, day = today, token = TokenOf(index) }
+  end
+  local messages = Report.Messages(many)
+  EQ(#messages, 3, "fourteen items make three messages")
+  for _, message in ipairs(messages) do OK(#message <= 255, "a report message fits an addon message (" .. #message .. ")") end
+  OK(messages[1]:sub(1, 3) == "R1\t", "a report message starts with R1 and a TAB")
+  EQ(#Report.Parse(messages[1], today).items, 6, "six records in the first message")
+  EQ(#Report.Parse(messages[3], today).items, 2, "two in the last")
+  local joined = table.concat(Report.Messages(items), "\n")
+  OK(not joined:find("Guy") and not joined:find("private") and not joined:find("scam"), "no name, comment or label text is sent")
+  local retract = Report.RetractMessages({ { hash = HashOf(1), token = TokenOf(1) }, { hash = HashOf(2), token = TokenOf(2) } })
+  EQ(#retract, 1, "two retractions fit one message")
+  EQ(retract[1], "X1\t" .. HashOf(1) .. ":" .. TokenOf(1) .. ";" .. HashOf(2) .. ":" .. TokenOf(2), "retraction layout")
+  local back = Report.Parse(retract[1], today)
+  EQ(back.kind, "X1", "a retraction parses")
+  EQ(back.items[2].hash, HashOf(2), "with its items")
+
+  -- Parsing is strict.
+  local good = HashOf(1) .. ":3:" .. today .. ":" .. TokenOf(1)
+  local function Parse(text) return Report.Parse(text, today) end
+  EQ(Parse("R1\t" .. good).items[1].mask, 3, "a good record parses")
+  EQ(Parse(nil), nil, "not a string")
+  EQ(Parse("R1\t" .. string.rep(good .. ";", 10)), nil, "a message above 255 bytes is dropped")
+  EQ(Parse("R1" .. good), nil, "the TAB is required")
+  EQ(Parse("R1\t"), nil, "an empty body")
+  EQ(Parse("R9\t" .. good), nil, "an unknown message word")
+  EQ(Parse("zz"), nil, "garbage")
+  EQ(Parse("H1").kind, "H1", "a hello")
+  EQ(Parse("H2").kind, "H2", "a hello reply")
+  EQ(Parse("H1 extra"), nil, "a hello with trailing text is dropped")
+  EQ(#Parse("R1\t" .. string.upper(HashOf(10)) .. ":3:" .. today .. ":" .. TokenOf(1)).items, 0, "an upper-case hash is dropped")
+  EQ(#Parse("R1\t" .. "abcd:3:" .. today .. ":" .. TokenOf(1)).items, 0, "a short hash is dropped")
+  EQ(#Parse("R1\t" .. HashOf(1) .. ":3:" .. today .. ":abcd").items, 0, "a short token is dropped")
+  EQ(#Parse("R1\t" .. HashOf(1) .. ":0:" .. today .. ":" .. TokenOf(1)).items, 0, "mask 0 is dropped")
+  EQ(#Parse("R1\t" .. HashOf(1) .. ":512:" .. today .. ":" .. TokenOf(1)).items, 0, "mask 512 has no known bit left")
+  EQ(Parse("R1\t" .. HashOf(1) .. ":513:" .. today .. ":" .. TokenOf(1)).items[1].mask, 1, "unknown mask bits are clamped away")
+  EQ(#Parse("R1\t" .. HashOf(1) .. ":1234:" .. today .. ":" .. TokenOf(1)).items, 0, "a four digit mask is dropped")
+  EQ(#Parse("R1\t" .. HashOf(1) .. ":3:" .. (today + 1) .. ":" .. TokenOf(1)).items, 1, "tomorrow is accepted")
+  EQ(#Parse("R1\t" .. HashOf(1) .. ":3:" .. (today + 2) .. ":" .. TokenOf(1)).items, 0, "two days ahead is dropped")
+  EQ(#Parse("R1\t" .. HashOf(1) .. ":3:" .. (today - 90) .. ":" .. TokenOf(1)).items, 1, "day 90 is accepted")
+  EQ(#Parse("R1\t" .. HashOf(1) .. ":3:" .. (today - 91) .. ":" .. TokenOf(1)).items, 0, "day 91 is dropped")
+  EQ(#Parse("R1\t" .. HashOf(1) .. ":3:-5:" .. TokenOf(1)).items, 0, "a negative day is dropped")
+  EQ(#Parse("R1\t" .. HashOf(1) .. ":3:x:" .. TokenOf(1)).items, 0, "a non-numeric day is dropped")
+  local mixed = Parse("R1\t" .. good .. ";broken;" .. HashOf(2) .. ":1:" .. today .. ":" .. TokenOf(2))
+  EQ(#mixed.items, 2, "a bad record does not spoil the good ones around it")
+  local seven = {}
+  for index = 1, 7 do seven[index] = HashOf(index) .. ":1:" .. today .. ":" .. TokenOf(index) end
+  EQ(#Parse("R1\t" .. table.concat(seven, ";")).items, 6, "at most six records are read")
+  EQ(#Parse("X1\t" .. HashOf(1) .. ":" .. TokenOf(1) .. ";bad").items, 1, "a bad retraction is dropped alone")
+end)
+
+-- --- Community: Consent (section 8.9) ----------------------------------------------------------
+
+Group("Consent", function()
+  local Consent, Settings, Const = ns.Consent, ns.Settings, ns.Const
+  FreshDb()
+  EQ(Consent.Active(), false, "nothing is confirmed at first")
+  EQ(Consent.Allows("guild", "send"), false, "every switch is off")
+  EQ(#Consent.Receiving() + #Consent.Sending(), 0, "no source is active")
+  EQ(Consent.SetToggle("guild", "send", true), false, "a switch cannot be turned on before the disclosure is confirmed")
+  EQ(Settings.Get("community.guild.send"), false, "and stays off")
+
+  local changes = 0
+  ns.Events:On("COMMUNITY_CHANGED", function() changes = changes + 1 end)
+  Consent.Confirm()
+  EQ(Consent.Active(), true, "confirming activates consent")
+  EQ(changes, 1, "and announces it")
+  EQ(Consent.Allows("guild", "send"), false, "confirming alone does not turn anything on")
+  OK(Consent.SetToggle("guild", "send", true), "a switch can be turned on")
+  OK(Consent.SetToggle("friends", "receive", true), "each source and direction is its own switch")
+  EQ(Consent.Allows("guild", "send"), true, "guild send is on")
+  EQ(Consent.Allows("guild", "receive"), false, "guild receive is still off")
+  EQ(Consent.Allows("friends", "send"), false, "friends send is still off")
+  EQ(table.concat(Consent.Sending(), ","), "guild", "the sending sources")
+  EQ(table.concat(Consent.Receiving(), ","), "friends", "the receiving sources")
+  EQ(Consent.SetToggle("global", "receive", true), false, "global is not available yet")
+  EQ(Consent.Allows("global", "receive"), false, "and never allowed")
+  EQ(Consent.SetToggle("guild", "bogus", true), false, "an unknown direction is refused")
+  EQ(Consent.Allows("guild", "bogus"), false, "and never allowed")
+
+  -- A new disclosure version switches everything off until confirmed again.
+  Const.ConsentVersion = Const.ConsentVersion + 1
+  EQ(Consent.Active(), false, "a new disclosure version needs a new confirmation")
+  EQ(Consent.Allows("guild", "send"), false, "so the switches stop working")
+  Consent.Confirm()
+  EQ(Consent.Allows("guild", "send"), true, "and work again once confirmed")
+  Const.ConsentVersion = Const.ConsentVersion - 1
+  Settings.Set("community.consentVersion", Const.ConsentVersion)
+
+  -- Revoke.
+  Settings.Set("community.rules", { { label = "scam", source = "guild", minTier = 2, verdict = "warn" } })
+  ns.Aggregate.Add(HashOf(1), 1, TODAY, TokenOf(1), "guild")
+  ns.db.community.sent = { guild = { [HashOf(1)] = 1 } }
+  Consent.Revoke()
+  EQ(Consent.Active(), false, "revoking withdraws consent")
+  EQ(Settings.Get("community.guild.send"), false, "and switches everything off")
+  EQ(Settings.Get("community.friends.receive"), false, "in both directions")
+  local tokens = ns.Aggregate.Counts()
+  EQ(tokens, 0, "and deletes the received reports")
+  EQ(next(ns.db.community.sent), nil, "and forgets what was announced")
+  EQ(#Settings.Get("community.rules"), 1, "the player's rules stay")
+end)
+
+-- --- Community: Rules, hidden flags and the resolver (sections 8.5, 8.8, 6.3) -----------------
+
+Group("Rules and the community verdict", function()
+  local Rules, Consent, Aggregate, Hash, Resolver, Const = ns.Rules, ns.Consent, ns.Aggregate, ns.Hash, ns.Resolver, ns.Const
+  FreshDb()
+  UnitName = function(unit) if unit == "player" then return "Alice", "One" end end
+  local now = Hash.ServerTime()
+  local today = Hash.Day(now)
+  local SCAM = Const.LabelValue.scam
+
+  -- Rule checks.
+  local function Rule(label, source, tier, verdict) return { label = label, source = source, minTier = tier, verdict = verdict } end
+  EQ(Rules.Check(Rule("scam", "guild", 2, "warn")), nil, "a good rule")
+  EQ(Rules.Check(Rule("nonsense", "guild", 2, "warn")), "ERR_RULE", "an unknown label")
+  EQ(Rules.Check(Rule("scam", "mars", 2, "warn")), "ERR_RULE", "an unknown source")
+  EQ(Rules.Check(Rule("scam", "any", 2, "warn")), "ERR_RULE", "there is no 'any' source: sources are never mixed")
+  EQ(Rules.Check(Rule("scam", "guild", 2, "notice")), "ERR_RULE", "a rule raises to warn or ignore only")
+  EQ(Rules.Check(Rule("scam", "guild", 5, "warn")), "ERR_RULE", "tier above 4")
+  EQ(Rules.Check(Rule("scam", "guild", 0, "warn")), "ERR_RULE", "tier below 1")
+  EQ(Rules.Check(Rule("scam", "guild", 1.5, "warn")), "ERR_RULE", "a fractional tier")
+  EQ(Rules.Check(Rule("scam", "global", 2, "warn")), "ERR_RULE_GLOBAL", "a global rule needs tier 3")
+  EQ(Rules.Check(Rule("scam", "global", 3, "warn")), nil, "a global rule at tier 3 is fine")
+  EQ(Rules.Check("rule"), "ERR_RULE", "not a table")
+
+  local ok, err = Rules.Add(Rule("scam", "guild", 2, "warn"))
+  OK(ok, "a rule is added")
+  OK(Rules.Add(Rule("scam", "guild", 2, "warn")), "the same rule again is accepted")
+  EQ(#Rules.List(), 1, "but stored once")
+  ok, err = Rules.Add(Rule("scam", "global", 1, "ignore"))
+  EQ(ok, false, "an invalid rule is refused")
+  EQ(err, "ERR_RULE_GLOBAL", "with the reason")
+  OK(Rules.Add(Rule("spam", "friends", 1, "ignore")), "a second rule")
+  OK(Rules.Remove(1), "a rule is removed")
+  EQ(Rules.Remove(5), false, "a rule that is not there cannot be removed")
+  EQ(#Rules.List(), 1, "one rule left")
+  Rules.Remove(1)
+
+  -- Nothing without consent.
+  local key = "flagged one"
+  local hash = Hash.Candidates(key, now)[1]
+  Reports(hash, SCAM, 3, today, "guild", 0)
+  EQ(Resolver.Verdict("Flagged One"), nil, "reports alone do nothing without consent")
+  Consent.Confirm()
+  EQ(Resolver.Verdict("Flagged One"), nil, "and nothing until receiving from that source is switched on")
+  Consent.SetToggle("guild", "receive", true)
+  EQ(Resolver.Verdict("Flagged One"), "notice", "a tier 1 flag is only a notice")
+  local reasons = Resolver.Sources("Flagged One")
+  EQ(#reasons, 1, "one reason")
+  EQ(reasons[1].source, "community", "from the community")
+  EQ(reasons[1].from, "guild", "naming the source")
+  EQ(reasons[1].tier, 1, "with its tier")
+  EQ(reasons[1].count, 3, "and the number of reporters")
+  OK(reasons[1].labels.scam ~= nil, "and the labels")
+
+  -- Rules raise the verdict, per source and per tier.
+  Rules.Add(Rule("scam", "guild", 2, "warn"))
+  EQ(Resolver.Verdict("Flagged One"), "notice", "a rule for tier 2 does not match a tier 1 flag")
+  Reports(hash, SCAM, 4, today - 10, "guild", 10)  -- now 7 reporters within 30 days: tier 2
+  EQ(Resolver.Verdict("Flagged One"), "warn", "the rule matches once the tier is reached")
+  Rules.Add(Rule("scam", "guild", 2, "ignore"))
+  EQ(Resolver.Verdict("Flagged One"), "ignore", "the strongest matching rule wins")
+  Rules.Remove(2)
+  Rules.Remove(1)
+  Rules.Add(Rule("scam", "friends", 1, "ignore"))
+  EQ(Resolver.Verdict("Flagged One"), "notice", "a rule for another source does not apply")
+  Rules.Remove(1)
+  Rules.Add(Rule("spam", "guild", 1, "ignore"))
+  EQ(Resolver.Verdict("Flagged One"), "notice", "a rule for another label does not apply")
+  Rules.Remove(1)
+
+  -- Friends and guild are separate sources.
+  local friendKey = "friendly flag"
+  local friendHash = Hash.Candidates(friendKey, now)[1]
+  Reports(friendHash, SCAM, 3, today, "friends", 0)
+  EQ(Resolver.Verdict("Friendly Flag"), nil, "friend reports do not count while only the guild is received")
+  Consent.SetToggle("friends", "receive", true)
+  EQ(Resolver.Verdict("Friendly Flag"), "notice", "they count once that source is switched on")
+  EQ(Resolver.Sources("Friendly Flag")[1].from, "friends", "and say where they came from")
+  local split = "split flag"
+  local splitHash = Hash.Candidates(split, now)[1]
+  Reports(splitHash, SCAM, 2, today, "guild", 0)
+  Reports(splitHash, SCAM, 2, today, "friends", 10)
+  EQ(Resolver.Verdict("Split Flag"), nil, "two guild and two friend reporters do not add up to a flag")
+  Reports(HashOf(77), SCAM, 20, today, "global", 0)
+  local globalHash = Hash.Candidates("global flag", now)[1]
+  Reports(globalHash, SCAM, 40, today, "global", 0)
+  EQ(Resolver.Verdict("Global Flag"), nil, "global reports never affect a verdict here")
+
+  -- The previous season's hash is found as well.
+  local oldHash = Hash.Candidates("season flag", now)[2]
+  Reports(oldHash, SCAM, 3, today, "guild", 0)
+  EQ(Resolver.Verdict("Season Flag"), "notice", "reports filed under the previous season are found")
+
+  -- Own record wins; the strongest of everything wins otherwise.
+  ns.Records.Save("Flagged One", "warn", { spam = true }, "mine")
+  EQ(Resolver.Verdict("Flagged One"), "warn", "an own record wins over community data")
+  ns.Records.Remove("Flagged One")
+  EQ(Resolver.Verdict("Flagged One"), "notice", "and community data is back when it is gone")
+  ns.Subscriptions.Import({ id = "e1e1e1", name = "Listy", author = "Bob Two", records = {
+    ["flagged one"] = { name = "Flagged One", labels = { scam = true }, comment = "c" } }, count = 1 })
+  ns.Subscriptions.SetRule("e1e1e1", "scam", "ignore")
+  EQ(Resolver.Verdict("Flagged One"), "ignore", "the strongest of lists and community wins")
+  EQ(#Resolver.Sources("Flagged One"), 2, "with both reasons listed")
+  ns.Subscriptions.Remove("e1e1e1")
+
+  -- Tooltip lines name the source, the count and the tier.
+  local lines = ns.Tooltip.Lines("Flagged One")
+  local found
+  for _, line in ipairs(lines) do
+    if line.text:find("Guild", 1, true) and line.text:find("7 players", 1, true) then found = line.text end
+  end
+  OK(found ~= nil, "the tooltip names the source and the number of reporters")
+  OK(found and found:find("Elevated", 1, true) ~= nil, "and the tier")
+
+  -- "This flag is wrong".
+  local hidden = Rules.Hide("Flagged One")
+  OK(hidden, "a flag can be hidden")
+  EQ(Resolver.Verdict("Flagged One"), nil, "hiding removes the community verdict")
+  OK(Rules.IsHidden("Flagged One"), "it is reported as hidden")
+  EQ(Rules.HiddenList()[1].name, "Flagged One", "the hidden list shows the name")
+  EQ(#Rules.HiddenList(), 1, "once per player")
+  OK(Rules.Unhide(Rules.HiddenList()[1].hash), "it can be undone")
+  EQ(Resolver.Verdict("Flagged One"), "notice", "and the flag is back")
+  EQ(Rules.Unhide("0000000000000000"), false, "unknown hashes cannot be unhidden")
+
+  -- The context menu offers it only for a flag that comes from the community.
+  local menuRoot = { items = {} }
+  function menuRoot:CreateDivider() end
+  function menuRoot:CreateTitle() end
+  function menuRoot:CreateButton(text) self.items[#self.items + 1] = text end
+  ns.ContextMenu.Build(menuRoot, { name = "Flagged One" })
+  OK(table.concat(menuRoot.items, "|"):find(ns.L.CTX_WRONG, 1, true) ~= nil, "the menu offers 'this flag is wrong'")
+  menuRoot = { items = {}, CreateDivider = menuRoot.CreateDivider, CreateTitle = menuRoot.CreateTitle, CreateButton = menuRoot.CreateButton }
+  ns.ContextMenu.Build(menuRoot, { name = "Nobody Known" })
+  OK(table.concat(menuRoot.items, "|"):find(ns.L.CTX_WRONG, 1, true) == nil, "but not for a player without a community flag")
+  UnitName = nil
+end)
+
+-- --- Community: Roster ----------------------------------------------------------------------------
+
+Group("Roster", function()
+  local Roster = ns.Roster
+  Roster.Reset()
+  local list = {
+    { name = "Alice One-Realm", connected = true },
+    { name = "Bob Two", connected = false },
+  }
+  C_FriendList = {
+    GetNumFriends = function() return #list end,
+    GetFriendInfoByIndex = function(index) return list[index] end,
+  }
+  OK(Roster.IsFriend("alice one"), "a friend is found, ignoring case and the realm")
+  OK(Roster.IsFriend("Bob Two"), "an offline friend is a friend too")
+  EQ(Roster.IsFriend("Carol Three"), false, "a stranger is not")
+  EQ(Roster.IsOnline("Alice One"), true, "an online friend")
+  EQ(Roster.IsOnline("Bob Two"), false, "an offline friend")
+  EQ(table.concat(Roster.OnlineNames(), ","), "Alice One", "the online names")
+  EQ(Roster.IsFriend(nil), false, "no name, no friend")
+
+  local arrivals = {}
+  Roster.OnOnline(function(names) arrivals[#arrivals + 1] = table.concat(names, ",") end)
+  Roster.Refresh()
+  EQ(arrivals[1], "Alice One", "the first scan reports who is online")
+  Roster.Refresh()
+  EQ(#arrivals, 1, "a second scan reports nobody new")
+  list[2].connected = true
+  Roster.Refresh()
+  EQ(arrivals[2], "Bob Two", "a friend who comes online is reported")
+  list[1].connected = false
+  Roster.Refresh()
+  list[1].connected = true
+  Roster.Refresh()
+  EQ(arrivals[3], "Alice One", "and one who comes back")
+
+  issecretvalue = function(value) return value == SECRET end
+  list[#list + 1] = { name = SECRET, connected = true }
+  Roster.Reset()
+  EQ(Roster.IsFriend(SECRET), false, "a secret name is never a friend")
+  issecretvalue = nil
+  C_FriendList = { GetNumFriends = function() error("boom") end }
+  Roster.Reset()
+  EQ(Roster.IsFriend("Alice One"), false, "a failing client call gives an empty list")
+  C_FriendList = nil
+  Roster.Reset()
+  EQ(Roster.IsFriend("Alice One"), false, "no friend list API gives an empty list")
+  IsInGuild = nil
+  EQ(Roster.InGuild(), false, "no guild API: not in a guild")
+  IsInGuild = function() return true end
+  EQ(Roster.InGuild(), true, "in a guild")
+  IsInGuild = nil
+end)
+
+-- --- Community: Net, the background sending and receiving ----------------------------------------
+
+Group("Net", function()
+  local Net, Roster, Consent, Aggregate, Hash, Report, Const, Settings = ns.Net, ns.Roster, ns.Consent,
+    ns.Aggregate, ns.Hash, ns.Report, ns.Const, ns.Settings
+  local PREFIX = Const.COMMUNITY_PREFIX
 
   -- A scripted clock and a recording transport.
   local now, timers, sent = 0, {}, {}
   local sendOk = true
-  Transfer.io = {
-    send = function(text, target)
+  Net.io = {
+    send = function(prefix, text, channel, target)
       if not sendOk then return false end
-      sent[#sent + 1] = { text = text, target = target }
+      sent[#sent + 1] = { prefix = prefix, text = text, channel = channel, target = target, at = now }
       return true
     end,
     after = function(delay, fn) timers[#timers + 1] = { at = now + delay, fn = fn } end,
     now = function() return now end,
+    serverTime = function() return 1700000000 end,
   }
   local function Advance(seconds)
     local limit = now + seconds
@@ -1522,332 +2063,419 @@ Group("Transfer", function()
     return taken
   end
   local function Me(first, last) UnitName = function(unit) if unit == "player" then return first, last end end end
+  local friendList = {}
+  C_FriendList = {
+    GetNumFriends = function() return #friendList end,
+    GetFriendInfoByIndex = function(index) return friendList[index] end,
+  }
+  local inGuild = true
+  IsInGuild = function() return inGuild end
 
-  -- Popups.
-  local popup, shown, hidden = nil, 0, 0
-  StaticPopupDialogs = {}
-  StaticPopup_Show = function(which, a, b) shown = shown + 1; popup = { which = which, a = a, b = b } end
-  StaticPopup_Hide = function() hidden = hidden + 1 end
-
+  local today = Hash.Day(1700000000)
   local function Fresh()
     sendOk = true
-    Advance(400) -- lets every earlier session, queue and rate limit run out
+    Advance(100000)
+    Net.Reset()
+    Roster.Reset()
     FreshDb()
     Me("Alice", "One")
-    sent, printed, popup, shown, hidden = {}, {}, nil, 0, 0
+    sent, printed, friendList, inGuild = {}, {}, {}, true
+    Consent.Confirm()
   end
-  local function Printed(needle)
-    for _, line in ipairs(printed) do
-      if line:find(needle, 1, true) then return true end
-    end
-    return false
+  local function Spy()
+    local counter = { n = 0 }
+    ns.Events:On("COMMUNITY_CHANGED", function() counter.n = counter.n + 1 end)
+    return counter
   end
-  local function Fill(count)
-    for index = 1, count do
-      ns.Records.Save("Player" .. string.char(64 + index % 26 + 1) .. index, "warn",
-        { spam = true }, "comment number " .. index .. " " .. string.rep("x", 40))
-    end
+  local function Rec(name, verdict, labels, comment)
+    return ns.Records.Save(name, verdict, labels, comment or "a private comment")
   end
-  local function Offer(id, parts, records, name)
-    return table.concat({ "OFFER", id, parts, records, name }, "\t")
-  end
-  local function Deliver(text, sender, channel)
-    Transfer.OnMessage(Const.TRANSFER_PREFIX, text, channel or "WHISPER", sender)
-  end
-  local function Fields(text) return Wire.Split(text) end
+  local function Parse(message) return Report.Parse(message.text, today) end
+  local function HashFor(name) return Hash.Target(string.lower(name), Hash.Season(1700000000)) end
 
-  -- Errors before anything is sent.
+  -- Nothing is sent without consent.
   Fresh()
-  local ok, err = Transfer.Send("Alice One")
-  EQ(err, "MSG_SELF", "you cannot send to yourself")
-  ok, err = Transfer.Send("")
-  EQ(err, "ERR_NAME", "a name is needed")
-  ok, err = Transfer.Send("Bob Two")
-  EQ(err, "ERR_EXPORT_EMPTY", "an empty list is not offered")
-  EQ(#sent, 0, "nothing was sent")
-  for index = 1, 400 do
-    ns.Records.Save("Long" .. string.char(97 + index % 26) .. index, "warn", { spam = true },
-      string.rep(string.char(33 + index % 90), 250))
-  end
-  ok, err = Transfer.Send("Bob Two")
-  EQ(err, "ERR_TRANSFER_TOO_BIG", "a list above 600 parts is refused")
-  EQ(#sent, 0, "and nothing was sent")
+  ns.Settings.Set("community.consentVersion", 0)
+  Rec("Bad One", "ignore", { scam = true })
+  Net.Sync()
+  EQ(#Take(), 0, "no consent: nothing is sent")
+  Consent.Confirm()
+  Net.Sync()
+  EQ(#Take(), 0, "consent without a send switch: nothing is sent")
 
-  -- A full transfer, Alice to Bob, with the identity switched between roles.
+  -- Guild: the first report goes out, then only changes.
   Fresh()
-  Fill(12)
-  local aliceExportId = ns.db.settings.export.id
-  ok = Transfer.Send("  Bob  Two ")
-  OK(ok, "the offer is accepted for sending")
+  Consent.SetToggle("guild", "send", true)
+  Rec("Bad One", "ignore", { scam = true, toxicity = true }, "very private comment")
+  Rec("Warned Two", "warn", { scam = true })
+  Rec("Dispute Three", "ignore", { private_dispute = true })
+  Net.Sync()
   local first = Take()
-  EQ(#first, 1, "one message: the offer")
-  EQ(first[1].target, "Bob Two", "it goes to the normalized name (spaces trimmed and collapsed)")
-  local offer = Fields(first[1].text)
-  EQ(offer[1], "OFFER", "an OFFER")
-  EQ(#offer[2], 8, "with an 8 digit session id")
-  local partCount, recordCount = tonumber(offer[3]), tonumber(offer[4])
-  OK(partCount >= 2, "a list of twelve needs several parts (" .. partCount .. ")")
-  EQ(recordCount, 12, "the record count")
-  EQ(offer[5], "Alice's list", "the list name")
-  OK(Printed("Offered your list to Bob Two"), "the sender is told the offer went out")
-  local _, busyErr = Transfer.Send("Bob Two")
-  EQ(busyErr, "ERR_TRANSFER_BUSY", "a second offer to the same player waits")
-
-  Me("Bob", "Two")
-  ns.db.settings.export.id = "bbbbbbbbbbbb"
-  for key in pairs(ns.db.records) do ns.db.records[key] = nil end
-  ns.Events:Fire("RECORDS_CHANGED")
-  Deliver(first[1].text, "Alice One")
-  EQ(shown, 1, "the receiver gets a popup")
-  EQ(popup.which, "BLACKBOOK_TRANSFER_OFFER", "the popup is Blackbook's")
-  OK(popup.a:find("Alice One", 1, true) ~= nil, "it names the sender")
-  OK(popup.b:find("Alice's list", 1, true) ~= nil and popup.b:find("12", 1, true) ~= nil,
-    "it names the list and its size")
-  EQ(popup.which and StaticPopupDialogs.BLACKBOOK_TRANSFER_OFFER.timeout, 55, "the popup gives up before the sender does")
-  EQ(#Take(), 0, "nothing is sent before the player answers")
-  StaticPopupDialogs.BLACKBOOK_TRANSFER_OFFER.OnAccept()
-  Advance(0.5)
-  local reply = Take()
-  EQ(#reply, 1, "accepting sends one message")
-  EQ(reply[1].text, "ACCEPT\t" .. offer[2], "an ACCEPT for that session")
-  EQ(reply[1].target, "Alice One", "to the sender")
-
-  Me("Alice", "One")
-  Deliver(reply[1].text, "Bob Two")
-  Advance(0.3 * (partCount + 5))
-  local parts = Take()
-  EQ(#parts, partCount, "every part is sent")
-  EQ(parts[1].target, "Bob Two", "to the receiver")
-  for index, part in ipairs(parts) do
-    local fields = Fields(part.text)
-    OK(fields[1] == "PART" and fields[2] == offer[2] and tonumber(fields[3]) == index
-      and #fields[4] <= Const.Limits.transferChunk and #fields[4] >= 1, "part " .. index .. " is well formed")
-    OK(#part.text + #Const.TRANSFER_PREFIX <= 255, "part " .. index .. " fits an addon message")
-  end
-  OK(Printed("Sent your list to Bob Two"), "the sender is told it arrived")
-  local _, again = Transfer.Send("Bob Two")
-  OK(again ~= "ERR_TRANSFER_BUSY", "the session is closed, so the player is no longer busy")
-  Take()
-
-  -- Bob receives the parts, in reverse order.
-  Me("Bob", "Two")
-  printed = {}
-  for index = #parts, 1, -1 do
-    EQ(Subs.Get(aliceExportId), nil, "nothing is imported before the last part (" .. index .. ")")
-    Deliver(parts[index].text, "Alice One")
-  end
-  local imported = Subs.Get(aliceExportId)
-  OK(imported ~= nil, "the list is imported when the last part arrives")
-  EQ(imported and imported.count, 12, "all records arrived")
-  EQ(imported and imported.name, "Alice's list", "with its name")
-  OK(Printed("Alice's list"), "the receiver is told")
-
-  -- Declining.
-  Fresh()
-  Fill(3)
-  Transfer.Send("Carol Three")
-  local declined = Take()[1]
-  local sessionId = Fields(declined.text)[2]
-  Deliver("ACCEPT\tdeadbeef", "Carol Three")
-  EQ(#Take(), 0, "an ACCEPT for another session is ignored")
-  Deliver("DECLINE\t" .. sessionId, "Someone Else")
-  OK(not Printed("did not take your list"), "a DECLINE from another player is ignored")
-  Deliver("DECLINE\t" .. sessionId, "Carol Three")
-  OK(Printed("Carol Three did not take your list"), "a DECLINE is reported")
-  OK(Transfer.Send("Carol Three"), "and the player can be offered again")
-  Take()
-
-  -- No answer.
-  Fresh()
-  Fill(3)
-  Transfer.Send("Dave Four")
-  Take()
-  Advance(59)
-  OK(not Printed("did not answer"), "no timeout yet after 59 seconds")
-  Advance(2)
-  OK(Printed("Dave Four did not answer your offer"), "the offer times out after 60 seconds")
-  Deliver("ACCEPT\tstale", "Dave Four")
+  EQ(#first, 1, "one message to the guild: only the shareable ignore record")
+  EQ(first[1].prefix, PREFIX, "on the community prefix")
+  EQ(first[1].channel, "GUILD", "to the guild channel")
+  EQ(first[1].target, nil, "with no target")
+  local message = Parse(first[1])
+  EQ(message.kind, "R1", "a report")
+  EQ(#message.items, 1, "with one record")
+  EQ(message.items[1].hash, HashFor("Bad One"), "naming the target only by its hash")
+  EQ(message.items[1].mask, ns.Const.LabelValue.scam + ns.Const.LabelValue.toxicity, "and its labels")
+  EQ(message.items[1].token, Hash.Token(ns.db.community.install.secret, HashFor("Bad One")), "and the install's anonymous token")
+  OK(not first[1].text:find("Bad") and not first[1].text:find("private"), "no name or comment is sent")
+  EQ(ns.db.community.sent.guild[HashFor("Bad One")], message.items[1].mask, "the announcement is remembered")
+  Net.Sync()
   Advance(5)
-  EQ(#Take(), 0, "a late ACCEPT sends nothing")
-  OK(Transfer.Send("Dave Four"), "the player can be offered again")
-  Take()
+  EQ(#Take(), 0, "syncing again sends nothing new")
 
-  -- Send failures retry, then give up once.
+  -- A change retracts and re-reports; a removal retracts.
+  Rec("Bad One", "ignore", { scam = true })
+  Net.Sync()
+  Advance(5)
+  local changed = Take()
+  EQ(#changed, 2, "a changed label set is a retraction and a new report")
+  EQ(Parse(changed[1]).kind, "X1", "the retraction goes first")
+  EQ(Parse(changed[2]).kind, "R1", "then the report")
+  EQ(Parse(changed[2]).items[1].mask, ns.Const.LabelValue.scam, "with the new labels")
+  ns.Records.Remove("Bad One")
+  Net.Sync()
+  Advance(5)
+  local removed = Take()
+  EQ(#removed, 1, "removing the record sends one message")
+  EQ(Parse(removed[1]).kind, "X1", "a retraction")
+  EQ(Parse(removed[1]).items[1].token, Hash.Token(ns.db.community.install.secret, HashFor("Bad One")), "for that target's token")
+  EQ(next(ns.db.community.sent.guild), nil, "and nothing is remembered as announced")
+  Rec("Soon Warn", "ignore", { spam = true })
+  Net.Sync()
+  Advance(5)
+  Take()
+  Rec("Soon Warn", "warn", { spam = true })
+  Net.Sync()
+  Advance(5)
+  EQ(Parse(Take()[1]).kind, "X1", "turning an ignore into a warn withdraws the report")
+
+  -- Not in a guild: nothing goes to the guild.
   Fresh()
-  Fill(3)
+  Consent.SetToggle("guild", "send", true)
+  inGuild = false
+  Rec("Bad One", "ignore", { scam = true })
+  Net.Sync()
+  EQ(#Take(), 0, "without a guild there is nowhere to send")
+
+  -- Queue: six to a message, half a second apart, one pending slot per target.
+  Fresh()
+  Consent.SetToggle("guild", "send", true)
+  for index = 1, 14 do Rec("Player" .. string.char(64 + index), "ignore", { scam = true }) end
+  Net.Sync()
+  local firstOut = Take()
+  EQ(#firstOut, 1, "only one message goes out at once")
+  Advance(0.4)
+  EQ(#Take(), 0, "the next waits for the gap")
+  Advance(0.2)
+  local second = Take()
+  EQ(#second, 1, "the next goes out after half a second")
+  Advance(1)
+  local third = Take()
+  EQ(#Parse(firstOut[1]).items + #Parse(second[1]).items + #Parse(third[1]).items, 14, "fourteen records in three messages")
+  OK(third[1].at - second[1].at >= 0.5, "messages are at least half a second apart")
+  EQ(Net.PendingCount(), 0, "the queue is empty afterwards")
+
+  -- Failed sends are retried three times, then dropped.
+  Fresh()
+  Consent.SetToggle("guild", "send", true)
   sendOk = false
-  Transfer.Send("Erin Five")
-  Advance(4)
-  OK(not Printed("failed"), "no failure report while retries remain")
-  Advance(3)
-  OK(Printed("Sending your list to Erin Five failed"), "the failure is reported after 20 tries")
-  local failures = 0
-  for _, line in ipairs(printed) do if line:find("failed", 1, true) then failures = failures + 1 end end
-  EQ(failures, 1, "the failure is reported once")
+  Rec("Bad One", "ignore", { scam = true })
+  Net.Sync()
+  EQ(Net.PendingCount(), 1, "a failed message waits")
+  Advance(5.1)
+  EQ(Net.PendingCount(), 1, "and is retried")
+  Advance(5.1)
+  EQ(Net.PendingCount(), 0, "and dropped after the third failure")
   sendOk = true
-  OK(Transfer.Send("Erin Five"), "after a failure the player can be offered again")
-  Take()
+  Advance(10)
+  EQ(#Take(), 0, "nothing was sent while sending failed")
+  Net.Sync()
+  local again = Take()
+  EQ(#again, 1, "a report that was dropped is not marked as announced, so the next sync sends it again")
+  EQ(Parse(again[1]).kind, "R1", "as a report")
 
-  -- Receiver validation.
+  -- A newer report replaces an unsent one.
   Fresh()
-  Me("Bob", "Two")
-  Deliver(Offer("1234abcd", 2, 5, "Good"), "Alice One", "GUILD")
-  EQ(shown, 0, "only whispers count")
-  Transfer.OnMessage("OTHER", Offer("1234abcd", 2, 5, "Good"), "WHISPER", "Alice One")
-  EQ(shown, 0, "only our prefix counts")
-  Deliver(Offer("1234abcd", 2, 5, "Good"), "Bob Two")
-  EQ(shown, 0, "an offer from yourself is ignored")
-  issecretvalue = function(value) return value == SECRET end
-  Deliver(Offer("1234abcd", 2, 5, "Good"), SECRET)
-  Transfer.OnMessage(Const.TRANSFER_PREFIX, SECRET, "WHISPER", "Alice One")
-  issecretvalue = nil
-  EQ(shown, 0, "secret values are ignored")
-  for label, text in pairs({
-    ["short session id"] = Offer("12ab", 2, 5, "x"),
-    ["uppercase session id"] = Offer("1234ABCD", 2, 5, "x"),
-    ["non-hex session id"] = Offer("1234abcz", 2, 5, "x"),
-    ["zero parts"] = Offer("1234abcd", 0, 5, "x"),
-    ["too many parts"] = Offer("1234abcd", 601, 5, "x"),
-    ["fractional parts"] = Offer("1234abcd", 1.5, 5, "x"),
-    ["too many records"] = Offer("1234abcd", 2, 5001, "x"),
-    ["negative records"] = Offer("1234abcd", 2, -1, "x"),
-    ["text parts"] = Offer("1234abcd", "two", 5, "x"),
-    ["missing name field"] = "OFFER\t1234abcd\t2\t5",
-    ["extra field"] = Offer("1234abcd", 2, 5, "x") .. "\textra",
-    ["unknown word"] = "HELLO\t1234abcd",
-  }) do
-    Deliver(text, "Alice One")
-    EQ(shown, 0, "malformed offer ignored: " .. label)
-  end
-  EQ(#Take(), 0, "malformed offers get no reply")
+  Consent.SetToggle("guild", "send", true)
+  sendOk = false
+  Rec("Bad One", "ignore", { scam = true })
+  Net.Sync()
+  Rec("Bad One", "ignore", { scam = true, spam = true })
+  Net.Sync()
+  Rec("Bad One", "ignore", { scam = true, spam = true, hate = true })
+  Net.Sync()
+  local queued = Net.PendingCount()
+  OK(queued <= 2, "unsent reports for one target are replaced, not piled up (" .. queued .. ")")
+  sendOk = true
+  Advance(6)
+  local latest = Take()
+  local lastReport
+  for _, item in ipairs(latest) do if Parse(item).kind == "R1" then lastReport = Parse(item) end end
+  EQ(lastReport.items[1].mask, ns.Const.LabelValue.scam + ns.Const.LabelValue.spam + ns.Const.LabelValue.hate, "the newest labels are what finally goes out")
 
-  -- An ignored sender is met with silence.
-  ns.Records.Save("Spammer Six", "ignore", { spam = true }, "spam")
-  Deliver(Offer("1234abcd", 2, 5, "Good"), "Spammer Six")
-  EQ(shown, 0, "no popup for an ignored player")
-  EQ(#Take(), 0, "and no reply either")
-
-  -- A good offer; a second one while the popup is open is declined, but not repeatedly.
-  Deliver(Offer("1234abcd", 2, 5, "Good\1Name"), "Alice One")
-  EQ(shown, 1, "a good offer shows a popup")
-  OK(popup.b:find("Good Name", 1, true) ~= nil and not popup.b:find("%c"), "control characters in a list name become spaces")
-  Deliver(Offer("99999999", 2, 5, "Second"), "Carol Three")
-  EQ(shown, 1, "a second offer while the popup is open shows no popup")
-  Advance(0.5)
-  local busy = Take()
-  EQ(#busy, 1, "it is declined")
-  EQ(busy[1].text, "DECLINE\t99999999", "with a DECLINE for its session")
-  EQ(busy[1].target, "Carol Three", "to that player")
-  Deliver(Offer("88888888", 2, 5, "Third"), "Carol Three")
-  Advance(0.5)
-  EQ(#Take(), 0, "repeated offers from the same player are not answered again within 10 seconds")
-  Advance(11)
-  Deliver(Offer("77777777", 2, 5, "Fourth"), "Carol Three")
-  Advance(0.5)
-  EQ(#Take(), 1, "after 10 seconds it is answered again")
-
-  -- Parts before accepting are ignored, then the rules of a part.
-  Deliver("PART\t1234abcd\t1\tAAAA", "Alice One")
-  Deliver("PART\t1234abcd\t2\tBBBB", "Alice One")
-  EQ(Subs.Get("anything"), nil, "parts before accepting do nothing")
-  StaticPopupDialogs.BLACKBOOK_TRANSFER_OFFER.OnAccept()
-  Advance(0.5)
-  Take()
-  Deliver("PART\t1234abcd\t1\tAAAA", "Mallory Seven")
-  Deliver("PART\twrongone\t1\tAAAA", "Alice One")
-  Deliver("PART\t1234abcd\t0\tAAAA", "Alice One")
-  Deliver("PART\t1234abcd\t3\tAAAA", "Alice One")
-  Deliver("PART\t1234abcd\t1.5\tAAAA", "Alice One")
-  Deliver("PART\t1234abcd\t1\t" .. string.rep("A", Const.Limits.transferChunk + 1), "Alice One")
-  Deliver("PART\t1234abcd\t1\t", "Alice One")
-  Deliver("PART\t1234abcd\t1\tAA\tAA", "Alice One")
-  Deliver("PART\t1234abcd\t1", "Alice One")
-  Deliver("PART\t1234abcd\t1\tAAAA", "Alice One")
-  Deliver("PART\t1234abcd\t1\tCCCC", "Alice One") -- duplicate index
-  Deliver("PART\t1234abcd\t2\tnot a code", "Alice One") -- completes: the content is checked
-  OK(Printed("could not be used"), "a transfer that completes with garbage is reported")
-  OK(Printed(L.ERR_CODE_FORMAT), "with the reason")
-  Deliver("PART\t1234abcd\t1\tAAAA", "Alice One")
-  EQ(#Take(), 0, "the finished session accepts nothing more")
-
-  -- Parts arrive out of order and one is repeated with different content: the
-  -- repeat is ignored, so the list only completes with all three real parts.
+  -- Switching on later sends the whole backlog.
   Fresh()
-  Me("Bob", "Two")
-  local dupCode = ns.Codec.Encode({ id = "d00d00d00d01", name = "Dup test", author = "Alice One",
-    exported = 1, records = {
-      { name = "Dup One", verdict = "warn", labels = { spam = true }, comment = "c" },
-      { name = "Dup Two", labels = { scam = true }, comment = "d" } } })
-  local third = math.ceil(#dupCode / 3)
-  local pieces = { dupCode:sub(1, third), dupCode:sub(third + 1, 2 * third), dupCode:sub(2 * third + 1) }
-  Deliver(Offer("deadbeef", 3, 2, "Dup test"), "Alice One")
-  StaticPopupDialogs.BLACKBOOK_TRANSFER_OFFER.OnAccept()
-  Advance(0.5)
-  Take()
-  Deliver("PART	deadbeef	1	" .. pieces[1], "Alice One")
-  Deliver("PART	deadbeef	1	GARBAGE", "Alice One")
-  Deliver("PART	deadbeef	3	" .. pieces[3], "Alice One")
-  EQ(Subs.Get("d00d00d00d01"), nil, "two distinct parts out of three do not complete the list")
-  Deliver("PART	deadbeef	2	" .. pieces[2], "Alice One")
-  local dupList = Subs.Get("d00d00d00d01")
-  OK(dupList ~= nil and dupList.count == 2, "the third distinct part completes it, with the first part's real content")
-
-  -- Declining through the popup.
-  Fresh()
-  Me("Bob", "Two")
-  Deliver(Offer("abcdabcd", 2, 5, "Good"), "Alice One")
-  StaticPopupDialogs.BLACKBOOK_TRANSFER_OFFER.OnCancel()
-  Advance(0.5)
-  local no = Take()
-  EQ(#no, 1, "cancelling sends one message")
-  EQ(no[1].text, "DECLINE\tabcdabcd", "a DECLINE")
-  Deliver("PART\tabcdabcd\t1\tAAAA", "Alice One")
-  StaticPopupDialogs.BLACKBOOK_TRANSFER_OFFER.OnCancel()
-  Advance(0.5)
-  EQ(#Take(), 0, "a second cancel does nothing")
-
-  -- The popup's own timeout and a receiving session that never completes.
-  Fresh()
-  Me("Bob", "Two")
-  Deliver(Offer("11112222", 2, 5, "Good"), "Alice One")
-  Advance(57)
-  local lapsed = Take()
-  EQ(#lapsed, 1, "a popup left alone is declined")
-  EQ(lapsed[1].text, "DECLINE\t11112222", "with a DECLINE")
-  OK(hidden >= 1, "and hidden")
-  Deliver(Offer("33334444", 2, 5, "Good"), "Alice One")
-  StaticPopupDialogs.BLACKBOOK_TRANSFER_OFFER.OnAccept()
-  Advance(0.5)
-  Take()
-  Deliver("PART\t33334444\t1\tAAAA", "Alice One")
-  Advance(299)
-  OK(not Printed("did not arrive"), "a session is still open after 299 seconds")
+  Rec("Bad One", "ignore", { scam = true })
+  Rec("Bad Two", "ignore", { spam = true })
+  Net.Reset()
+  Consent.SetToggle("guild", "send", true)
+  Net.Changed()
+  Advance(1.1)
   Advance(2)
-  OK(Printed("The list from Alice One did not arrive in time"), "a session expires after 5 minutes")
-  Deliver("PART\t33334444\t2\tBBBB", "Alice One")
-  EQ(#Take(), 0, "an expired session accepts nothing")
-  Deliver(Offer("55556666", 2, 5, "Again"), "Alice One")
-  EQ(shown, 3, "after expiry a new offer is welcome")
+  local backlog = Take()
+  local carried = 0
+  for _, item in ipairs(backlog) do carried = carried + #Parse(item).items end
+  EQ(carried, 2, "switching the guild switch on sends everything there is")
+  Net.Changed()
+  Advance(3)
+  OK(#Take() == 0, "a later change without a switch change does not repeat the backlog")
 
-  -- Without a popup system an offer is declined with a notice.
+  -- Receiving from the guild.
   Fresh()
-  Me("Bob", "Two")
-  StaticPopupDialogs, StaticPopup_Show = nil, nil
-  Deliver(Offer("aaaabbbb", 2, 5, "Good"), "Alice One")
-  Advance(0.5)
-  local noPopup = Take()
-  EQ(#noPopup, 1, "no popup: one reply")
-  EQ(noPopup[1].text, "DECLINE\taaaabbbb", "a DECLINE")
-  OK(Printed(L.TRANSFER_NO_POPUP), "and the player is told why")
-  StaticPopupDialogs, StaticPopup_Show = {}, function() shown = shown + 1 end
+  Consent.SetToggle("guild", "receive", true)
+  local spy = Spy()
+  local H = HashOf(11)
+  local report = "R1\t" .. H .. ":" .. ns.Const.LabelValue.scam .. ":" .. today .. ":" .. TokenOf(1)
+  Net.OnMessage(PREFIX, report, "GUILD", "Carol Three")
+  local stored = ns.db.community.reports.guild and ns.db.community.reports.guild[H]
+  OK(stored ~= nil and stored.scam[TokenOf(1)] == today, "a guild report is filed under the guild source")
+  EQ(ns.db.community.reports.friends, nil, "and not under friends")
+  EQ(spy.n, 0, "listeners hear about it after a moment, not at once")
+  Advance(1.1)
+  EQ(spy.n, 1, "and once for any number of reports")
+  OK(next(ns.db.community.reports.guild[H].scam) == TokenOf(1), "the sender is not stored: only the token")
+  local serialized = {}
+  local function Walk(value)
+    if type(value) == "table" then for k, v in pairs(value) do serialized[#serialized + 1] = tostring(k); Walk(v) end
+    else serialized[#serialized + 1] = tostring(value) end
+  end
+  Walk(ns.db.community.reports)
+  OK(not table.concat(serialized, " "):find("Carol"), "nothing in the store names the sender")
 
-  -- Registration needs the addon message API.
+  -- Receiving checks.
+  local function Count() local tokens = Aggregate.Counts(); return tokens end
+  local before = Count()
+  Net.OnMessage("OTHER", report, "GUILD", "Carol Three")
+  Net.OnMessage(PREFIX, report, "SAY", "Carol Three")
+  Net.OnMessage(PREFIX, report, "PARTY", "Carol Three")
+  Net.OnMessage(PREFIX, report, "GUILD", "Alice One")
+  Net.OnMessage(PREFIX, report, "GUILD", nil)
+  Net.OnMessage(PREFIX, report .. string.rep("x", 300), "GUILD", "Carol Three")
+  Net.OnMessage(PREFIX, "R1\tgarbage", "GUILD", "Carol Three")
+  Net.OnMessage(PREFIX, "R1\t" .. string.upper(HashOf(10)) .. ":1:" .. today .. ":" .. TokenOf(2), "GUILD", "Carol Three")
+  Net.OnMessage(PREFIX, "R1\t" .. H .. ":1:" .. (today - 200) .. ":" .. TokenOf(3), "GUILD", "Carol Three")
+  Net.OnMessage(PREFIX, "R1\t" .. H .. ":1:" .. (today + 9) .. ":" .. TokenOf(4), "GUILD", "Carol Three")
+  issecretvalue = function(value) return value == SECRET end
+  Net.OnMessage(PREFIX, "R1\t" .. H .. ":1:" .. today .. ":" .. TokenOf(5), "GUILD", SECRET)
+  Net.OnMessage(PREFIX, SECRET, "GUILD", "Carol Three")
+  issecretvalue = nil
+  EQ(Count(), before, "wrong prefix, channel, sender, size, hash, day and secret values add nothing")
+
+  -- Whispers need a friend and the friends switch.
+  friendList = { { name = "Dave Four", connected = true } }
+  Roster.Reset()
+  local friendReport = "R1\t" .. HashOf(12) .. ":1:" .. today .. ":" .. TokenOf(6)
+  Net.OnMessage(PREFIX, friendReport, "WHISPER", "Dave Four")
+  EQ(ns.db.community.reports.friends, nil, "friend reports are refused while the friends switch is off")
+  Consent.SetToggle("friends", "receive", true)
+  Net.OnMessage(PREFIX, friendReport, "WHISPER", "Stranger Five")
+  EQ(ns.db.community.reports.friends, nil, "a whisper from someone who is not a friend is refused")
+  Net.OnMessage(PREFIX, friendReport, "WHISPER", "Dave Four")
+  OK(ns.db.community.reports.friends and ns.db.community.reports.friends[HashOf(12)], "a friend's report is filed under friends")
+  EQ(ns.db.community.reports.guild[HashOf(12)], nil, "and not under the guild")
+  Consent.SetToggle("guild", "receive", false)
+  Net.OnMessage(PREFIX, report, "GUILD", "Carol Three")
+  EQ(ns.db.community.reports.guild[H].scam[TokenOf(1)], today, "a switched-off source accepts no new reports")
+  Net.OnMessage(PREFIX, "R1\t" .. HashOf(13) .. ":1:" .. today .. ":" .. TokenOf(7), "GUILD", "Carol Three")
+  EQ(ns.db.community.reports.guild[HashOf(13)], nil, "(checked with a fresh target)")
+
+  -- Retractions only touch their own source.
+  Consent.SetToggle("guild", "receive", true)
+  ns.Aggregate.Add(HashOf(14), 1, today, TokenOf(8), "guild")
+  ns.Aggregate.Add(HashOf(14), 1, today, TokenOf(8), "friends")
+  Net.OnMessage(PREFIX, "X1\t" .. HashOf(14) .. ":" .. TokenOf(8), "GUILD", "Carol Three")
+  EQ(ns.db.community.reports.guild[HashOf(14)], nil, "a guild retraction removes the guild report")
+  OK(ns.db.community.reports.friends[HashOf(14)] ~= nil, "and leaves the friends report")
+  ns.Aggregate.Add(HashOf(14), 1, today, TokenOf(8), "guild")
+  Net.OnMessage(PREFIX, "X1	" .. HashOf(14) .. ":" .. TokenOf(8), "WHISPER", "Dave Four")
+  EQ(ns.db.community.reports.friends[HashOf(14)], nil, "a friend's retraction removes the friends report")
+  OK(ns.db.community.reports.guild[HashOf(14)] ~= nil, "and leaves the guild report")
+
+  -- Rate caps per sender: 30 a minute, 600 an hour.
   Fresh()
+  Consent.SetToggle("guild", "receive", true)
+  local function Burst(sender, from, count)
+    for index = from, from + count - 1 do
+      Net.OnMessage(PREFIX, "R1\t" .. HashOf(1000 + index) .. ":1:" .. today .. ":" .. TokenOf(index), "GUILD", sender)
+    end
+  end
+  Burst("Spammer Six", 1, 40)
+  EQ(Count(), 30, "a sender gets 30 records a minute")
+  Advance(61)
+  Burst("Spammer Six", 41, 5)
+  EQ(Count(), 35, "and more once the minute is over")
+  Burst("Helper Seven", 100, 3)
+  EQ(Count(), 38, "other senders have their own allowance")
+  local oldMinute, oldHour = ns.Const.Community.perMinute, ns.Const.Community.perHour
+  ns.Const.Community.perMinute, ns.Const.Community.perHour = 1000, 40
+  Burst("Flood Eight", 200, 60)
+  EQ(Count(), 38 + 40, "the hourly cap holds as well")
+  ns.Const.Community.perMinute, ns.Const.Community.perHour = oldMinute, oldHour
+
+  -- Friends: hello, reply, confirmation, backlog, and deltas.
+  Fresh()
+  Consent.SetToggle("friends", "send", true)
+  Consent.SetToggle("friends", "receive", true)
+  Rec("Bad One", "ignore", { scam = true })
+  friendList = { { name = "Dave Four", connected = true }, { name = "Erin Five", connected = false } }
+  Roster.Reset()
+
+  -- Hello replies: H1 from a friend is answered once a minute, only when we receive.
+  Net.OnMessage(PREFIX, "H1", "WHISPER", "Dave Four")
+  Advance(1)
+  local reply = Take()
+  EQ(#reply, 1, "a hello from a friend is answered")
+  EQ(reply[1].text, "H2", "with H2")
+  EQ(reply[1].channel, "WHISPER", "by whisper")
+  EQ(reply[1].target, "Dave Four", "to that friend")
+  Net.OnMessage(PREFIX, "H1", "WHISPER", "Dave Four")
+  Advance(1)
+  EQ(#Take(), 0, "a second hello within a minute is not answered")
+  Advance(61)
+  Net.OnMessage(PREFIX, "H1", "WHISPER", "Dave Four")
+  Advance(1)
+  EQ(#Take(), 1, "after a minute it is answered again")
+  Net.OnMessage(PREFIX, "H1", "WHISPER", "Stranger Five")
+  Net.OnMessage(PREFIX, "H1", "GUILD", "Dave Four")
+  Advance(1)
+  EQ(#Take(), 0, "hellos from strangers or over the guild channel are ignored")
+  Consent.SetToggle("friends", "receive", false)
+  Advance(61)
+  Net.OnMessage(PREFIX, "H1", "WHISPER", "Dave Four")
+  Advance(1)
+  EQ(#Take(), 0, "without the receive switch we do not even say that we run the addon")
+  Consent.SetToggle("friends", "receive", true)
+
+  -- H2 confirms a friend, who then gets the backlog and later changes.
+  Net.OnMessage(PREFIX, "H2", "WHISPER", "Stranger Five")
+  Advance(1)
+  EQ(#Take(), 0, "a reply from a stranger confirms nobody")
+  Net.OnMessage(PREFIX, "H2", "WHISPER", "Dave Four")
+  Advance(1)
+  local welcome = Take()
+  EQ(#welcome, 1, "a confirmed friend gets the backlog")
+  EQ(welcome[1].target, "Dave Four", "by whisper")
+  EQ(Parse(welcome[1]).items[1].hash, HashFor("Bad One"), "naming only hashes")
+  Rec("Another One", "ignore", { spam = true })
+  Net.Sync()
+  Advance(1)
+  local delta = Take()
+  EQ(#delta, 1, "a new record goes to the confirmed friend")
+  EQ(delta[1].target, "Dave Four", "and only to the confirmed online friend, not to Erin")
+  local deltaHashes = {}
+  for _, item in ipairs(Parse(delta[1]).items) do deltaHashes[item.hash] = true end
+  OK(deltaHashes[HashFor("Another One")], "and it carries the new record")
+  friendList[1].connected = false
+  Roster.Reset()
+  Rec("Third One", "ignore", { hate = true })
+  Net.Sync()
+  Advance(1)
+  EQ(#Take(), 0, "an offline friend is not sent anything")
+  Consent.SetToggle("friends", "send", false)
+  Net.OnMessage(PREFIX, "H2", "WHISPER", "Dave Four")
+  Advance(1)
+  EQ(#Take(), 0, "a hello reply is ignored while sending to friends is off")
+
+  -- Registration wires everything up.
+  Fresh()
+  local frames = {}
+  local savedCreate = CreateFrame
+  CreateFrame = function()
+    local frame = { events = {}, scripts = {} }
+    function frame:RegisterEvent(event) self.events[event] = true end
+    function frame:SetScript(name, fn) self.scripts[name] = fn end
+    frames[#frames + 1] = frame
+    return frame
+  end
+  C_Timer = { After = function() end }
+  local prefixes = {}
+  C_ChatInfo = { RegisterAddonMessagePrefix = function(prefix) prefixes[#prefixes + 1] = prefix return true end }
+  Net.Reset()
+  OK(Net.Register(), "registration succeeds when the client has what it needs")
+  EQ(prefixes[1], PREFIX, "the community prefix is registered")
+  local listener
+  for _, frame in ipairs(frames) do if frame.events.CHAT_MSG_ADDON then listener = frame end end
+  OK(listener ~= nil, "the addon message event is listened to")
+  Consent.SetToggle("guild", "receive", true)
+  listener.scripts.OnEvent(listener, "CHAT_MSG_ADDON", PREFIX, report, "GUILD", "Carol Three")
+  OK(ns.db.community.reports.guild and ns.db.community.reports.guild[H], "an event reaches the receiving code")
+  OK(Net.Register(), "registering twice is harmless")
   C_ChatInfo = nil
-  EQ(Transfer.Register(), false, "no addon message API: registration reports it")
-  OK(Printed(L.MSG_NO_TRANSFER), "with a notice")
-  StaticPopupDialogs, StaticPopup_Show, StaticPopup_Hide = nil, nil, nil
-  UnitName = nil
+  CreateFrame = savedCreate
+  C_Timer = nil
+
+  UnitName, C_FriendList, IsInGuild = nil, nil, nil
+end)
+
+-- --- Community: revoke sends retractions and wipes data (section 8.9) ------------------------------
+
+Group("Revoke", function()
+  local Net, Consent, Roster, Hash, Report = ns.Net, ns.Consent, ns.Roster, ns.Hash, ns.Report
+  local sent, timers, now = {}, {}, 0
+  Net.io = {
+    send = function(prefix, text, channel, target) sent[#sent + 1] = { text = text, channel = channel, target = target } return true end,
+    after = function(delay, fn) timers[#timers + 1] = { at = now + delay, fn = fn } end,
+    now = function() return now end,
+    serverTime = function() return 1700000000 end,
+  }
+  local function Advance(seconds)
+    local limit = now + seconds
+    repeat
+      local pick
+      for index, timer in ipairs(timers) do
+        if timer.at <= limit and (not pick or timer.at < timers[pick].at) then pick = index end
+      end
+      if pick then
+        local timer = table.remove(timers, pick)
+        now = math.max(now, timer.at)
+        timer.fn()
+      end
+    until not pick
+    now = limit
+  end
+  FreshDb()
+  Net.Reset()
+  UnitName = function(unit) if unit == "player" then return "Alice", "One" end end
+  IsInGuild = function() return true end
+  Consent.Confirm()
+  Consent.SetToggle("guild", "send", true)
+  Consent.SetToggle("guild", "receive", true)
+  ns.Records.Save("Bad One", "ignore", { scam = true }, "c")
+  Net.Sync()
+  Advance(2)
+  sent = {}
+  ns.Aggregate.Add(HashOf(1), 1, Hash.Day(1700000000), TokenOf(1), "guild")
+
+  Consent.Revoke()
+  Advance(2)
+  local retractions = 0
+  for _, message in ipairs(sent) do
+    local parsed = Report.Parse(message.text, Hash.Day(1700000000))
+    if parsed and parsed.kind == "X1" then retractions = retractions + #parsed.items end
+  end
+  EQ(retractions, 1, "revoking withdraws what was reported")
+  EQ(Consent.Active(), false, "consent is gone")
+  EQ(ns.Aggregate.Counts(), 0, "received reports are deleted")
+  sent = {}
+  ns.Records.Save("Another One", "ignore", { spam = true }, "c")
+  Net.Sync()
+  Advance(2)
+  EQ(#sent, 0, "and nothing is sent afterwards")
+  UnitName, IsInGuild = nil, nil
 end)
 
 -- --- Summary -------------------------------------------------------------------

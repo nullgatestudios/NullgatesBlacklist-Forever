@@ -16,10 +16,9 @@ Const.ICON = "Interface/AddOns/" .. Const.ADDON_NAME .. "/icon.tga"
 Const.SLASH_BLACKBOOK = "/blackbook"
 Const.SLASH_BLACKBOOK_SHORT = "/bb"
 
--- Wire prefixes (sections 7.1, 7.4, 8.6). They stay distinct because the
+-- Wire prefixes (sections 7.1, 8.6). They stay distinct because the
 -- game throttles bursts per prefix.
 Const.CODE_PREFIX = "BK1"
-Const.TRANSFER_PREFIX = "BKX"
 Const.COMMUNITY_PREFIX = "BKC"
 
 -- Limits used by validation (sections 6.2, 7.3, 7.4).
@@ -29,12 +28,9 @@ Const.Limits = {
   listName = 60,
   author = 60,
   recordsPerList = 5000,
-  transferChunk = 200,
-  transferParts = 600,
   codeBytes = 5400000,    -- longest pasted code accepted (5000 records, Base64)
   payloadBytes = 4000000, -- longest payload after decoding or decompressing
   subscriptions = 50,     -- imported lists kept at once
-  offerName = 100,        -- bytes of the list name sent in a transfer offer
 }
 
 -- Labels (section 5.1). Fixed order; never renumber, never rename an ID.
@@ -120,6 +116,28 @@ Const.Tiers = {
     { tier = 3, reports = 20, days = 7 },
     { tier = 4, reports = 30, days = 1 },
   },
+}
+
+-- Community sources (section 8). Friends and guild share one set of tier
+-- thresholds but are stored and evaluated separately; "global" (M9) is a
+-- separate world with its own thresholds and is never mixed with them.
+Const.Sources = { "friends", "guild", "global" }
+Const.SourceGroup = { friends = "friends", guild = "friends", global = "global" }
+
+-- Community limits (sections 8.4, 8.6, 8.7).
+Const.Community = {
+  recordsPerMessage = 6,
+  windowDays = 90,        -- reports older than this expire
+  futureDays = 1,         -- a report day this far ahead is still accepted
+  targetCap = 20000,      -- distinct targets per source
+  tokenCap = 50,          -- tokens per target and label
+  totalCap = 200000,      -- tokens in the whole store
+  perMinute = 30,         -- records accepted per sender and minute
+  perHour = 600,          -- ... and per hour
+  sendGap = 0.5,          -- seconds between two outgoing messages
+  retries = 3,            -- send attempts per message
+  retryDelay = 5,         -- seconds before a failed send is tried again
+  globalMinRuleTier = 3,  -- a global rule cannot be set to react below this tier
 }
 
 -- Hash inputs (section 8.2).

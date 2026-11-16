@@ -119,14 +119,13 @@ Data/Resolver.lua      -- verdict computation with cache (pure given store)
 Data/Query.lua         -- filter and sort of record arrays for the list tab (pure)
 Share/Wire.lua         -- escaping and line format helpers (pure)
 Share/Codec.lua        -- list code encode/decode and validation (pure)
-Share/Transfer.lua     -- in-game list transfer sessions
 Community/Hash.lua     -- hashing, token derivation, season (pure)
-Community/Report.lua   -- builds report batches from own records (pure)
-Community/Aggregate.lua-- store, tiers, expiry, caps (pure)
-Community/Rules.lua    -- community rule matching (pure)
-Community/Consent.lua  -- opt-in state, disclosure, revoke and purge
-Community/Roster.lua   -- who is online: guild, friends, Battle.net friends
-Community/Net.lua      -- outbox, send, receive, validation
+Community/Report.lua   -- builds report batches from own records, wire format and its parser (pure)
+Community/Aggregate.lua-- store per source, tiers, expiry, caps (pure given ns.db)
+Community/Consent.lua  -- opt-in state, per-source switches, revoke and purge
+Community/Rules.lua    -- rules, the community verdict, hidden flags
+Community/Roster.lua   -- character friends and who is online (Battle.net friends are not read yet)
+Community/Net.lua      -- outbox, background sync, receiving and its checks
 Community/Global.lua   -- M9 only: channel, envelope cipher, relay
 Enforce/Chat.lua       -- one chat filter pipeline
 Enforce/Requests.lua   -- invite, duel, trade
@@ -140,7 +139,9 @@ UI/Manager.lua         -- main window frame and tab bar; tabs register with Mana
 UI/TabList.lua         -- "My list" tab
 UI/TabImported.lua     -- "Imported" tab
 UI/TabLists.lua        -- "Lists" tab (rules per imported list)
-UI/TabShare.lua        -- "Share" tab (export, import, send)
+UI/TabShare.lua        -- "Share" tab (export and import codes)
+UI/TabCommunity.lua    -- "Community" tab (consent, switches, preview, revoke)
+UI/TabRules.lua        -- "Rules" tab (community rules, hidden flags)
 UI/TabSettings.lua     -- "Settings" tab
 UI/Wizard.lua
 UI/Minimap.lua
@@ -202,9 +203,11 @@ A label set is stored as a table `{ [id] = true }` and transmitted as an integer
     },
   },
   community = {                -- section 8.4
-    install = { secret = "<32 hex>" },
-    reports = { ... },
-    hidden = { ["<target hash>"] = true },   -- local "this flag is wrong"
+    install = { secret = "<32 hex>" },        -- made at first start, never sent
+    reports = { friends = {}, guild = {}, global = {} },  -- per source: [hash][label][token] = day
+    sent = { guild = { [hash] = mask }, friends = { ... } },  -- what was announced, so only changes are sent
+    hidden = { ["<target hash>"] = "First Last" },  -- local "this flag is wrong", name kept to undo it
+    tokenCount = 0, targetCount = { guild = 0 },      -- counters for the caps
   },
 }
 ```
@@ -325,33 +328,16 @@ R ...
 - At most 50 imported lists are kept; replacing an existing one is always allowed.
 - The import dialog shows list name, author, record count and date. Existing subscriptions with the same ID are replaced, **keeping the user's rules**.
 
-### 7.4 In-game transfer (`Share/Transfer.lua`)
-Prefix `BKX`. Fields are TAB separated; the first field is a word.
-
-| Message | Fields | Meaning |
-|---|---|---|
-| `OFFER` | sessionId, partCount, recordCount, listName | sender proposes a transfer |
-| `ACCEPT` | sessionId | receiver agrees |
-| `DECLINE` | sessionId | receiver declines or is busy |
-| `PART` | sessionId, index, chunk | one chunk of the list code |
-
-- Chunk size 200 bytes; at most 600 parts.
-- Sent via `WHISPER` only, queued at one message per 0.3 s. A failed send retries up to 20 times, then drops the session and reports failure once.
-- The offer times out after 60 s. The receiver's popup times out slightly sooner.
-- Per-sender session state machine: `OFFERED -> ACCEPTED -> RECEIVING -> DONE|FAILED`. A new offer while a popup is open is auto-declined. Receivers ignore offers from players whose verdict is `ignore`.
-- Each part is accepted only for an active session, from the matching sender (`Identity.Same`), with an unseen index in range. When all parts have arrived, run the normal import validation, skipping the confirmation (the receiver already agreed).
-- A receiver session expires after 5 minutes.
-- Offers from an ignored player get no reply at all. A second offer while one is open is declined, but each sender is answered at most once per 10 seconds, so a flood does not become a flood of replies.
-- The receiver has one session at a time. Every field of every message is validated (session id of 8 lowercase hex digits, part count 1 to 600, record count 0 to 5000, part index in range and unseen, chunk 1 to 200 bytes, exact field counts) and a malformed message is dropped silently.
-- The list name in an offer is cut to 100 bytes without splitting a character, so an offer always fits an addon message. A send result counts as success for `nil`, `true` or `0`; anything else is retried.
-- The popup (`BLACKBOOK_TRANSFER_OFFER`) names the sender, the list and its size. Without the popup system the offer is declined with a notice.
+### 7.4 In-game transfer: removed
+Version 0.6.0 had a popup-based "send my list" between two players. It was removed in 0.7.0: sharing with friends and guild is now automatic and silent (section 8), and the list code (7.1 to 7.3) remains for moving a list between accounts or sharing it outside the game. The prefix `BKX` is no longer used.
 
 ---
 
 ## 8. Community reports (M8 and M9)
 
 ### 8.1 Design principles
-- **Opt-in, per source.** Everything is off by default. Sending and receiving are separate toggles for each source.
+- **Opt-in, per source.** Everything is off by default. Sending and receiving are separate toggles for each source. The player confirms the disclosure once; after that sharing is **automatic and silent**: no popups, no prompts and no chat output while reports are sent or received.
+- **Sources are kept apart.** Friends, guild and (later) global have separate switches, separate stores, separate tier evaluation and separate rules. Data of one source never counts towards another, and there is no "any source" rule.
 - **Anonymized, not anonymous.** Reports contain no reporter data. For Friends and Guild, a direct recipient can still tell which character sent a message. The consent text must say so.
 - **Informational by default.** Community data produces at most a `notice` unless the user creates a rule.
 - **Nothing identifying is stored.** Receivers never store the message sender.
@@ -384,21 +370,22 @@ The global numbers are proposals for review; keep them in one table so they are 
 Structure inside `db.community.reports`:
 
 ```lua
-reports[targetHash][labelId][source][token] = day   -- day = Hash.Day at report time
+reports[source][targetHash][labelId][token] = day   -- day = Hash.Day at report time
 ```
 
 - `Aggregate.Add(targetHash, mask, day, token, source)`: for every label bit set, store the token for that source if absent (the first-seen day wins; later duplicates are ignored). Enforce the caps below.
-- `Aggregate.Retract(targetHash, token)`: remove that token everywhere for the target.
-- `Aggregate.Tier(targetHash, labelId, enabledSources, today)` returns the tier and the distinct count, de-duplicating tokens across the enabled sources.
+- `Aggregate.Retract(targetHash, token, source)`: remove that token for the target **in that source only**. A retraction is only as trustworthy as the knowledge of the token, so one source can never delete another source's reports.
+- `Aggregate.Tier(targetHash, labelId, sources, today)` returns the tier and the distinct count. Friends and guild may be combined (a reporter who told both counts once); friends or guild together with global is refused (tier 0), because those worlds are kept apart.
+- `Aggregate.Summary(targetHash, sources, today)` gives the best tier, the distinct reporters over all labels and each label's tier, or nil below tier 1.
 - `Aggregate.Expire(today)`: drop tokens older than 90 days and empty tables. Run at login and once per day while online.
-- Caps: 20000 targets, 50 tokens per target per label per source (oldest dropped first), 200000 tokens in total (oldest dropped first).
+- Caps: 20000 targets per source (new targets are refused at the cap), 50 tokens per target and label (oldest dropped first), 200000 entries in total (the oldest 5% are dropped when it is full). Counters are kept in the saved data and rebuilt once if missing.
 - `Aggregate.Purge()` empties the store (used on revoke).
 
 ### 8.5 Community rules (`Community/Rules.lua`, pure)
 ```lua
-rule = { label = "scam", source = "guild"|"friends"|"global"|"any", minTier = 2, verdict = "warn"|"ignore" }
+rule = { label = "scam", source = "friends"|"guild"|"global", minTier = 2, verdict = "warn"|"ignore" }
 ```
-- A rule matches a target when the aggregate tier for `(label, sources)` is at least `minTier`. `source = "any"` means the union of the sources the user currently has enabled for receiving.
+- A rule matches a target when the tier of that label **in that one source** is at least `minTier`. Each source is evaluated on its own and yields its own reason; a rule for one source never reacts to another source's data.
 - Rules for a source the user has not enabled for receiving never match.
 - Defaults when the user creates a rule: `minTier = 2`. A `global` rule cannot have a `minTier` below 3 (enforce in the editor and again in the matcher).
 - Creating a rule with verdict `ignore` shows a confirmation: "This will hide chat and decline requests from matching players automatically."
@@ -406,7 +393,7 @@ rule = { label = "scam", source = "guild"|"friends"|"global"|"any", minTier = 2,
 
 ### 8.6 Wire protocol (Friends and Guild)
 
-Prefix `BKC` (separate from `BKX`, because the game throttles bursts per prefix).
+Prefix `BKC` (its own prefix, because the game throttles bursts per prefix).
 
 Message body (at most 255 bytes):
 ```
@@ -416,14 +403,14 @@ Each `rec` is `<hash16>:<mask3>:<day>:<token8>` where `mask` is a decimal label 
 
 Retraction: `X1 <TAB> <hash16>:<token8>` (at most 6, `;`-separated).
 
-Hello handshake (to find friends who use the addon): `H1` and the reply `H2`. A friend who comes online gets an `H1`. A reply of `H2` marks them as an addon user; only confirmed addon users receive reports.
+Hello handshake (to find friends who use the addon): `H1` and the reply `H2`. A friend who comes online gets an `H1` (only when sending to friends is on). The receiver answers `H2` **only when receiving from friends is on** (so a player who does not take part does not reveal that they run the addon), at most once a minute per friend. An `H2` is accepted only from a friend and only when sending to friends is on; it marks them as an addon user, and only confirmed, online addon users receive reports. A confirmed friend who comes back online gets the whole list again.
 
 **Receiving checks (all of them; drop silently on any failure):**
 1. The prefix matches. Text and sender are non-secret strings.
 2. The channel is `GUILD`, `WHISPER`, or a Battle.net game-data message. Ignore any other channel.
 3. The sender is not the player (use `Identity.Same` and the player's GUID where the client provides it).
 4. The source is enabled for receiving: `guild` messages need `community.guild.receive`; whispers and Battle.net need `community.friends.receive` **and** the sender must be a confirmed friend.
-5. Battle.net senders are accepted only if they play this game and are of the player's **faction**. Character whispers cannot cross factions anyway.
+5. Battle.net senders are accepted only if they play this game and are of the player's **faction**. Character whispers cannot cross factions anyway. *Battle.net messaging is not implemented yet; only the guild channel and character whispers are used.*
 6. Each record: hash is 16 lowercase hex; mask is 1 to 511 after clamping to known bits; day is within the last 90 days and not in the future by more than 1 day; token is 8 hex.
 7. Per-sender rate cap: at most 30 records per minute and 600 per hour; extra records are dropped.
 8. If a sender cannot be matched to a roster entry unambiguously, drop the message.
@@ -433,15 +420,15 @@ The sender is used for these checks only and is **never stored**.
 ### 8.7 Sending (`Community/Net.lua`, `Community/Report.lua`)
 - **What gets reported:** the user's own records with `verdict = "ignore"` only (not `warn`), restricted to labels in `community.shareLabels`. A record with no shareable label is skipped.
 - A report batch is built by `Report.Build(records, now)`: for each record compute `hash`, `mask` (shareable labels only), `day` (the record's created day; clamped to the last 90 days), `token`.
-- **When:** when a record is saved with shareable labels (queue one report per source), when the user enables a send toggle (send the whole backlog, throttled), and when a friend replies `H2` (send the backlog to that friend only). Do not resend a report that was already sent to that destination during this session (remember sent `hash:token` pairs in memory only).
-- **Retract:** when a record is removed or loses all shareable labels, send an `X1` for it. When consent is revoked, send retractions for everything previously reported if the connection allows; at minimum stop sending.
-- **Destinations:** `GUILD` (if the player is in a guild and `guild.send`); for each confirmed addon-user friend that is online: a Battle.net message if the friend is reachable that way, otherwise a character whisper. Skip a friend who is already covered by the guild broadcast.
-- **Outbox:** one message at a time, a 0.5 s gap, one pending slot per `(destination, key)` where a newer report for the same target replaces an unsent one. The sender frame hides itself when the queue is empty. Wrap every send in `pcall`; a failed send is retried after a delay, up to 3 times.
+- **When (sync model):** `db.community.sent[class]` remembers what was announced to a class of destinations (`guild`, `friends`) as `hash -> mask`. After any change (records, settings, community state, batched for one second) `Net.Sync` compares the current reports with it and sends only the difference: new or changed targets as `R1`, removed ones as `X1`. A target whose labels changed is retracted first, then reported again. Switching a send switch on clears that class's memory, so the whole backlog goes out. A report dropped after its retries is forgotten, so the next sync sends it again. A friend who answers `H2`, or who comes back online, gets the whole current list.
+- **Retract:** when a record is removed, turned into a warn, or loses all shareable labels, an `X1` goes out. Revoking consent sends retractions for everything announced to the classes that are still switched on, then stops; the receivers' copies of old reports expire after 90 days regardless.
+- **Destinations:** `GUILD` (when the player is in a guild and guild sending is on); character whispers to each confirmed addon-user friend who is online and has friends sending on.
+- **Outbox:** one message at a time, a 0.5 s gap. Items wait in one slot per destination and target: a newer report for the same target replaces an unsent one, and a retraction cancels an unsent report. Up to 6 items of one kind share a message. Every send is wrapped in `pcall`; a failed send is retried after 5 seconds, up to 3 attempts in all. Destinations take turns.
 - **Roster (`Community/Roster.lua`):** track who is online in the guild, character friends and Battle.net friends (same game only). Rescan, debounced by 1 second, on the roster and friend events listed in section 2. Request fresh rosters every 30 seconds only while the manager window is open.
 
 ### 8.8 Local "this is wrong" and display
-- `db.community.hidden[hash] = true` hides community data and cancels community enforcement for that target. Never shared. The context menu offers it for flagged players; the manager can undo it.
-- Tooltip line: `Reported by <N> players (<source list>) for: <labels>` plus the tier name. Chat and portrait markers use the `notice` look, with a stronger look at tier 3 and above.
+- `db.community.hidden[hash] = "First Last"` (this season's and the previous season's hash) hides community data and cancels community enforcement for that target. The name is kept on this install only, so the Rules tab can list it and undo it. Never shared. The context menu offers *This flag is wrong* for players flagged by community data.
+- Tooltip: one line per source, `<Source>: <N> players reported this player (<tier name>)`, followed by the labels, so friends and guild stay visibly apart. Chat and portrait markers use the `notice` look (or the verdict a rule gives). *A stronger look at tier 3 and above is not done yet.*
 
 ### 8.9 Consent
 - Show a **disclosure screen** (wizard page and settings tab) before any community toggle can be turned on. It must state, in plain language:
@@ -475,12 +462,13 @@ Keep the layout simple and uniform; use `Widgets.lua` helpers (checkbox, radio g
   1. *My list*: search box, verdict filter, label filter, sortable columns (name, verdict, labels, comment, date), scroll list with row tooltip, add-player box, delete with Shift-click.
   2. *Imported*: all subscription records, with the effective verdict per row; click to adopt into your own list.
   3. *Lists*: choose a subscription, set the verdict per label (`notice`, `warn`, `ignore`), remove the list (Shift-click).
-  4. *Share*: export (list name, label selection, comments checkbox, Create code button with a read-only code box), import (paste box, Import and Clear buttons, a confirmation popup showing list name, author, size and date), send to player (name box and button). The code and paste boxes sit in a scroll frame (`Widgets.CodeBox`), because a long code in a plain multi-line box would draw over the widgets below it and steal their clicks. The export settings are saved as they are changed; typing is never overwritten by a refresh.
-  5. *Community*: consent, per-source toggles, share labels, rule editor, backlog preview, hidden flags, revoke and delete.
-  6. *Settings*: language, enforcement toggles, auto-reply mode with a preview line, minimap, restart wizard.
+  4. *Share*: export (list name, label selection, comments checkbox, Create code button with a read-only code box), import (paste box, Import and Clear buttons, a confirmation popup showing list name, author, size and date),  The code and paste boxes sit in a scroll frame (`Widgets.CodeBox`), because a long code in a plain multi-line box would draw over the widgets below it and steal their clicks. The export settings are saved as they are changed; typing is never overwritten by a refresh.
+  5. *Community*: the disclosure and its confirm button, send and receive switches for friends and guild (global shown as not available), the reasons that may be shared, a preview of what would be sent (hashes and labels, never names), a counter of held reports and queued messages, and *Revoke and delete* (with a confirmation).
+  6. *Rules*: the community rules (add one rule per chosen reason; Shift-click removes; a rule that ignores asks for confirmation) and the list of hidden flags (click to show again).
+  7. *Settings*: language, enforcement toggles, auto-reply mode with a preview line, minimap, restart wizard.
 - **Wizard** (first run, 4 pages): welcome and language; what "ignore" does; auto-reply; finish and minimap. A separate page for community consent is reachable from the Community tab, not forced on first run.
 - **Minimap button:** left-click toggles the manager, drag repositions, tooltip shows the record count.
-- **Context menu:** add entries on player menus (unit frames, chat names, group, guild lists): *Ignore...*, *Warn...* when no record exists; *Edit...* and *Remove* when one does; *Adopt...* when only a subscription lists the player; *Send my list*; and for a community-flagged player, *This flag is wrong*. Do nothing for the player's own character or for non-players.
+- **Context menu:** add entries on player menus (unit frames, chat names, group, guild lists): *Ignore...*, *Warn...* when no record exists; *Edit...* and *Remove* when one does; *Adopt...* when only a subscription lists the player; and for a community-flagged player, *This flag is wrong*. Do nothing for the player's own character or for non-players.
 
 ---
 
@@ -524,11 +512,11 @@ Each milestone must load without Lua errors, work with `/reload`, and leave prev
 
 **M5: display.** `Display/*`, chat markers. *Accept:* chat icons for `warn`; portrait overlay for each verdict; tooltip content including escaping of `|`.
 
-**M6: sharing lists.** `Wire`, `Codec`, `Subscriptions`, `Transfer`, manager tabs *Imported*, *Lists*, *Share*. *Accept:* export then import the code on a second account or after clearing; checksum errors report clearly; rules change the effective verdict; in-game transfer works with accept and decline, timeouts clean up; codec tests pass.
+**M6: sharing lists (0.6.0).** `Wire`, `Codec`, `Subscriptions`, manager tabs *Imported*, *Lists*, *Share*. *Accept:* export then import the code on a second account or after clearing; checksum errors report clearly; rules change the effective verdict; codec tests pass.
 
-**M7: polish.** `Enforce/Reply` (with its control and preview line on the Settings tab), `UI/Wizard`, German locale completion, settings migration test. *Accept:* auto-reply obeys every rule in 6.4; first-run wizard appears once; the language switch works.
+**M7: community, friends and guild (0.7.0, built before the polish step).** `Hash`, `Report`, `Aggregate`, `Consent`, `Rules`, `Roster`, `Net`, the *Community* and *Rules* tabs, resolver, tooltip and menu integration. Sharing is automatic and silent after one confirmed disclosure; friends and guild are separate from each other's switches and from the global world. *Accept:* nothing is sent or accepted while consent is missing; each switch works independently; a record change is reported in the background without any prompt and a removal is retracted; reports from the guild or from a friend flag players with a notice only; a rule can raise that per source and tier; hidden flags suppress it; revoke withdraws and deletes; all validation and tier-boundary tests pass.
 
-**M8: community, Friends and Guild.** `Hash`, `Report`, `Aggregate`, `Rules`, `Consent`, `Roster`, `Net`, the Community tab, tooltip and marker integration. Build in this order and stop for review after each step: (1) Aggregate and tiers with injected test data; (2) Resolver integration and rules; (3) Hash, Report and Net validation, tested with synthetic messages; (4) Consent UI and the rule editor; (5) Roster and transport (guild first, then friends); (6) display polish. *Accept:* nothing is sent or accepted while consent is missing; each toggle works independently; retract removes a report from a second client; hidden flags suppress enforcement; all validation tests pass.
+**M8: polish.** `Enforce/Reply` (with its control and preview line on the Settings tab), `UI/Wizard`, German locale completion, settings migration test. *Accept:* auto-reply obeys every rule in 6.4; first-run wizard appears once; the language switch works.
 
 **M9: global channel.** `Community/Global.lua` and its consent text. *Accept:* the hour-boundary overlap works; relays do not loop; global rules enforce the tier 3 minimum; rate limits drop floods.
 
@@ -557,7 +545,10 @@ For each delivery, the reviewer checks:
 - **Global thresholds** in 8.3 are untested proposals.
 - **Aggregator hosting** (who runs it, how data reaches players) is undecided; it is planned for after M9.
 - **API availability** (section 2) must be confirmed against the actual client before M8; Battle.net messaging in particular.
-- **Whisper targets with a space.** Transfer whispers to a two-part name ("First Last"). If the client refuses a target with a space, sending fails and is reported as a failed transfer; the list code remains the fallback. Confirm in game.
+- **Whisper targets with a space.** Hello and reports to friends are whispered to a two-part name ("First Last"). If the client refuses such a target, sending to friends silently fails (guild sharing is unaffected). Confirm in game.
+- **Battle.net friends** are not read yet, so a friend who is only a Battle.net friend (not a character friend) is not reached.
+- **Guild broadcast reaches everyone in the guild who runs the addon**, including members who never agreed to anything; they only receive hashes and tokens, and only store them if they opted in to receiving from the guild.
+- **Retraction trust.** Anyone who has seen a token can retract it from the source it came from. The effect is limited to that source and to one report.
 - **`C_EncodingUtil` signatures** are assumed (`CompressString(text)` returning a string, `DecompressString(text)`); the code verifies the round trip and falls back to the raw code, but a client where compression works differently simply never produces `BK1C` codes.
 - **Scroll frame template.** `UIPanelScrollFrameTemplate` is assumed for the code boxes; without it they fall back to a single-line edit box.
 

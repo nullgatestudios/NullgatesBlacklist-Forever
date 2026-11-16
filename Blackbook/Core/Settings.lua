@@ -115,6 +115,12 @@ function Settings.Init()
   if type(exportId) ~= "string" or #exportId ~= 12 or not exportId:match("^%x+$") then
     db.settings.export.id = RandomHex(6) -- 12 lowercase hex digits
   end
+  if type(db.community) ~= "table" then db.community = {} end
+  if type(db.community.install) ~= "table" then db.community.install = {} end
+  local install = db.community.install
+  if type(install.secret) ~= "string" or #install.secret ~= 32 or not install.secret:match("^%x+$") then
+    install.secret = RandomHex(16) -- 32 lowercase hex digits; never leaves this install
+  end
   ns.db = db
   return db
 end

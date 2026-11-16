@@ -1,5 +1,6 @@
--- Blackbook: the "Share" tab (section 9): export the own list as a code,
--- import a pasted code after a confirmation, and send the list to a player.
+-- Blackbook: the "Share" tab (section 9): export the own list as a code and
+-- import a pasted code after a confirmation. Sharing with friends and guild is
+-- automatic and lives on the Community tab.
 -- Widgets are placed from the top by one running offset so nothing overlaps.
 local _, ns = ...
 
@@ -85,9 +86,8 @@ local function Build(content)
   end)
   state.codeBox = Widgets.CodeBox(content, FULL_WIDTH, 64, Const.Limits.codeBytes)
   state.pasteBox = Widgets.CodeBox(content, FULL_WIDTH, 64, Const.Limits.codeBytes)
-  state.sendBox = Widgets.InputBox(content, 220, Const.Limits.name)
   if not (state.nameBox and state.picker and state.comments and state.codeBox
-    and state.pasteBox and state.sendBox) then
+    and state.pasteBox) then
     return nil
   end
 
@@ -132,11 +132,7 @@ local function Build(content)
     state.pasteBox.edit:SetText("")
     state.importStatus:SetText("")
   end)
-  state.sendButton = Widgets.Button(content, Text("SHARE_SEND_BUTTON"), 100, function()
-    local ok, err = ns.Transfer.Send(state.sendBox:GetText())
-    if ok then state.sendBox:SetText("") else Print(Text(err)) end
-  end)
-  if not (state.exportButton and state.importButton and state.clearButton and state.sendButton) then
+  if not (state.exportButton and state.importButton and state.clearButton) then
     return nil
   end
 
@@ -167,14 +163,6 @@ local function Build(content)
   state.clearButton:SetPoint("LEFT", state.importButton, "RIGHT", 8, 0)
   state.importStatus:SetPoint("LEFT", state.clearButton, "RIGHT", 12, 0)
   y = y + 34
-
-  -- Send in game.
-  Header("SHARE_SEND")
-  local sendLabel = Widgets.Label(content, Text("SHARE_SEND_NAME"), "GameFontHighlightSmall")
-  sendLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -(y + 5))
-  state.sendBox:SetPoint("TOPLEFT", content, "TOPLEFT", 130, -y)
-  state.sendButton:SetPoint("LEFT", state.sendBox, "RIGHT", 12, 0)
-  y = y + 30
 
   state.height = y
 

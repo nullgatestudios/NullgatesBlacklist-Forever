@@ -68,6 +68,13 @@ local function Compute(key)
       end
     end
   end
+  -- Community reports (section 6.3): friends and guild are evaluated apart, and
+  -- only for the sources the player receives from.
+  if ns.Rules then
+    local communityVerdict, communityReasons = ns.Rules.Evaluate(key)
+    best = Stronger(best, communityVerdict)
+    for _, reason in ipairs(communityReasons) do reasons[#reasons + 1] = reason end
+  end
   table.sort(reasons, function(a, b)
     if a.verdict ~= b.verdict then return RANK[a.verdict] > RANK[b.verdict] end
     return tostring(a.listId) < tostring(b.listId)

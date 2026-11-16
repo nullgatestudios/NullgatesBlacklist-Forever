@@ -35,7 +35,11 @@ function Tooltip.Lines(name)
   local lists = 0
   for _, reason in ipairs(reasons) do
     local show = true
-    if reason.source == "list" then
+    if reason.source == "community" then
+      -- One line per source, so friends and guild stay visibly apart.
+      Add(string.format(Text("TT_COMMUNITY"), Text("SOURCE_" .. string.upper(reason.from)),
+        reason.count, Text("TIER_" .. reason.tier)), Markers.Look[reason.verdict].color, true)
+    elseif reason.source == "list" then
       lists = lists + 1
       if lists > MAX_LISTS then
         show = false

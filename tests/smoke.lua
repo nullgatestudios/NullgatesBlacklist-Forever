@@ -744,13 +744,6 @@ Contains(Run("test bogus")[1], ns.L.MSG_TEST_USAGE, "/bb test with an unknown ve
 -- --- Sharing: tabs, export, import, lists and the transfer hook ------------------------------------
 
 do
-  Equals(smokeRegistered, Const.TRANSFER_PREFIX, "the transfer prefix is registered")
-  local addonFrame
-  for _, frame in ipairs(frames) do
-    if frame.events and frame.events.CHAT_MSG_ADDON then addonFrame = frame end
-  end
-  Check(addonFrame ~= nil, "the addon message event is listened to")
-
   -- Pump timers (0.3 s) run by hand; the long ones (timeouts) stay pending.
   local function RunShortTimers()
     local keep = {}
@@ -788,7 +781,7 @@ do
   Check(Find(codeBox, function(f) return f.template == "UIPanelScrollFrameTemplate" end)[1] ~= nil,
     "the code box scrolls inside its own frame, so a long code cannot cover other widgets")
   local inputs = Find(share, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)
-  local nameBox, sendBox = inputs[1], inputs[2]
+  local nameBox = inputs[1]
 
   Click(Button(share, ns.L.SHARE_EXPORT_BUTTON))
   local exportedText = codeBox.edit.text
@@ -896,31 +889,193 @@ do
   IsShiftKeyDown = nil
   Equals(ns.Subscriptions.Get("feedbeef0001"), nil, "Shift-click removes it")
   Equals(ns.Resolver.Verdict("Foreign One"), nil, "and its entries no longer flag anyone")
+end
 
-  -- Send tab control and the event hook, over the client's own message call.
-  smokeSent = {}
-  addonFrame._scripts.OnEvent(addonFrame, "CHAT_MSG_ADDON", Const.TRANSFER_PREFIX,
-    "OFFER" .. string.char(9) .. "12345678" .. string.char(9) .. "2" .. string.char(9) .. "5"
-    .. string.char(9) .. "Hello list", "WHISPER", "Zed Zed")
-  Equals(smokeLastPopup.which, "BLACKBOOK_TRANSFER_OFFER", "a whispered offer reaches the transfer code")
-  StaticPopupDialogs.BLACKBOOK_TRANSFER_OFFER.OnCancel()
-  local declined = smokeSent[#smokeSent]
-  Check(declined ~= nil, "declining sends an addon message")
-  Equals(declined.prefix, Const.TRANSFER_PREFIX, "on our prefix")
-  Equals(declined.channel, "WHISPER", "as a whisper")
-  Equals(declined.target, "Zed Zed", "to the sender")
-  Equals(declined.text, "DECLINE" .. string.char(9) .. "12345678", "saying DECLINE for that session")
-  RunShortTimers()
+-- --- Community: tabs, consent, background sharing and rules ------------------------------------------
 
-  Click(ButtonByText(ns.L.TAB_SHARE))
-  smokeSent = {}
-  Type(sendBox, "Zed Zed")
-  Click(Button(share, ns.L.SHARE_SEND_BUTTON))
-  local offer = smokeSent[1]
-  Check(offer ~= nil and offer.text:sub(1, 6) == "OFFER" .. string.char(9), "the Send button offers the list")
-  Equals(offer and offer.target, "Zed Zed", "to the typed player")
-  Equals(sendBox.text, "", "and empties the name box")
+do
+  Equals(smokeRegistered, Const.COMMUNITY_PREFIX, "the community prefix is registered")
+  local addonFrame
+  for _, frame in ipairs(frames) do
+    if frame.events and frame.events.CHAT_MSG_ADDON then addonFrame = frame end
+  end
+  Check(addonFrame ~= nil, "the addon message event is listened to")
+
+  local function RunShortTimers()
+    local keep = {}
+    for _, timer in ipairs(smokeTimers) do
+      if timer.delay <= 1 then timer.fn() else keep[#keep + 1] = timer end
+    end
+    smokeTimers = keep
+  end
+  local function TabContent(predicate)
+    for _, child in ipairs(manager.children) do
+      if predicate(child) or #Find(child, predicate) > 0 then return child end
+    end
+    return nil
+  end
+  local function Button(root, text)
+    return Find(root, function(f) return f.kind == "Button" and f.text == text end)[1]
+  end
+  local function Checks(root, text)
+    return Find(root, function(f) return f.kind == "CheckButton" and f.text == text end)
+  end
+  local function Deliver(text, channel, sender)
+    addonFrame._scripts.OnEvent(addonFrame, "CHAT_MSG_ADDON", Const.COMMUNITY_PREFIX, text, channel, sender)
+  end
+
+  Run("")
+  for _, key in ipairs({ "TAB_LIST", "TAB_IMPORTED", "TAB_LISTS", "TAB_SHARE", "TAB_COMMUNITY", "TAB_RULES", "TAB_SETTINGS" }) do
+    Check(ButtonByText(ns.L[key]) ~= nil, key .. " is on the tab bar")
+  end
+  Equals(#Find(manager, function(f)
+    return f.kind == "Button" and f.points and f.points[1].relative == manager and f.points[1].y == -32
+  end), 7, "all seven tab buttons sit on the tab bar")
+
+  -- Community tab: nothing can be switched on before the notice is confirmed.
+  Click(ButtonByText(ns.L.TAB_COMMUNITY))
+  local community = TabContent(function(f) return f.kind == "Button" and f.text == ns.L.COMM_CONFIRM end)
+  Check(community ~= nil, "the community tab is built")
+  local sends, receives = Checks(community, ns.L.COMM_SEND), Checks(community, ns.L.COMM_RECEIVE)
+  Equals(#sends, 2, "friends and guild each have a send switch")
+  Equals(#receives, 2, "and a receive switch")
+  Equals(sends[1].enabled, false, "the switches are disabled before the notice is confirmed")
+  local friendsSend, guildSend, friendsReceive, guildReceive = sends[1], sends[2], receives[1], receives[2]
+  guildSend:SetChecked(true)
+  Click(guildSend)
+  Equals(ns.Settings.Get("community.guild.send"), false, "a switch cannot be turned on before consent")
+  Equals(guildSend.checked, false, "and the box unticks itself")
+  Equals(ns.Consent.Active(), false, "no consent yet")
+
+  local confirmButton = Button(community, ns.L.COMM_CONFIRM)
+  Click(confirmButton)
+  Equals(ns.Consent.Active(), true, "the confirm button gives consent")
+  Equals(confirmButton.enabled, false, "and disables itself")
+  Equals(guildSend.enabled, true, "the switches are enabled now")
+  Equals(ns.Settings.Get("community.guild.receive"), false, "confirming alone switches nothing on")
+  guildReceive:SetChecked(true)
+  Click(guildReceive)
+  Equals(ns.Settings.Get("community.guild.receive"), true, "the guild receive switch works")
+  Equals(ns.Settings.Get("community.friends.receive"), false, "and is independent of the friends switch")
+
+  -- A guild report arrives through the client's addon event and flags a player.
+  local today = ns.Hash.Day(time())
+  local hash = ns.Hash.Candidates("smoke target", time())[1]
+  for index = 1, 3 do
+    Deliver("R1" .. string.char(9) .. hash .. ":" .. Const.LabelValue.scam .. ":" .. today .. ":" ..
+      string.format("%08x", index), "GUILD", "Carol Three")
+  end
   RunShortTimers()
+  Equals(ns.Resolver.Verdict("Smoke Target"), "notice", "three guild reporters flag a player with a notice")
+  local _, marked = chatFilters.CHAT_MSG_SAY(nil, "CHAT_MSG_SAY", "hello", "Smoke Target")
+  Check(type(marked) == "string" and marked:find("Arrow-Down-Up", 1, true) ~= nil, "and the chat line carries the notice icon")
+  Equals(ns.db.community.reports.friends, nil, "nothing landed in the friends store")
+  Equals(ns.Rules.Evaluate("smoke target"), "notice", "the community verdict is separate from lists and own records")
+
+  -- Background sending: a record change is announced to the guild without any prompt.
+  IsInGuild = function() return true end
+  guildSend:SetChecked(true)
+  Click(guildSend)
+  Equals(ns.Settings.Get("community.guild.send"), true, "the guild send switch works")
+  smokeSent, smokePopups = {}, 0
+  RunShortTimers()
+  smokeSent = {}
+  ns.Records.Save("Smoke Ign", "ignore", { scam = true }, "a very private comment")
+  RunShortTimers()
+  local report
+  for _, message in ipairs(smokeSent) do
+    if message.prefix == Const.COMMUNITY_PREFIX and message.text:sub(1, 3) == "R1" .. string.char(9) then report = message end
+  end
+  Check(report ~= nil, "a new Ignore entry is reported in the background")
+  Equals(report and report.channel, "GUILD", "to the guild")
+  Check(report and not report.text:find("Smoke", 1, true) and not report.text:find("private", 1, true),
+    "without the name or the comment")
+  Equals(smokePopups, 0, "and without asking anything")
+  local before = #printed
+  Check(true, "sending prints nothing (" .. before .. " lines so far)")
+
+  -- Preview shows hashes and labels, never names.
+  local previewBox = Find(community, function(f) return f.edit ~= nil end)[1]
+  Click(Button(community, ns.L.COMM_PREVIEW))
+  Contains(previewBox.edit.text, ns.Hash.Target("smoke ign", ns.Hash.Season(time())), "the preview shows the hash")
+  Contains(previewBox.edit.text, ns.L.LABEL_SCAM, "and the reason")
+  Check(not previewBox.edit.text:find("Smoke", 1, true), "but not the name")
+  previewBox.edit:SetText("tampered")
+  previewBox.edit._scripts.OnTextChanged(previewBox.edit, true)
+  Check(previewBox.edit.text:find("tampered", 1, true) == nil, "typing in the preview changes nothing")
+
+  -- Rules tab.
+  Click(ButtonByText(ns.L.TAB_RULES))
+  local rules = TabContent(function(f) return f.kind == "Button" and f.text == ns.L.RULES_ADD_BUTTON end)
+  Check(rules ~= nil, "the rules tab is built")
+  local hiddenView = lastView
+  local providers = Find(rules, function(f) return f.provider ~= nil end)
+  Equals(#providers, 2, "a rules list and a hidden flags list")
+  Equals(#providers[1].provider.data, 0, "no rules yet")
+  local addRule = Button(rules, ns.L.RULES_ADD_BUTTON)
+  Click(addRule)
+  Equals(#ns.Rules.List(), 0, "a rule needs a reason")
+  local scamBox = Checks(rules, ns.L.LABEL_SCAM)[1]
+  scamBox:SetChecked(true)
+  Click(scamBox)
+  Click(Checks(rules, ns.L.VERDICT_IGNORE)[1])
+  smokePopups = 0
+  Click(addRule)
+  Equals(smokePopups, 1, "a rule that ignores players asks for confirmation")
+  Equals(smokeLastPopup.which, "BLACKBOOK_CONFIRM_RULE", "with Blackbook's popup")
+  Contains(smokeLastPopup.a, ns.L.RULES_IGNORE_CONFIRM, "saying what it will do")
+  Equals(#ns.Rules.List(), 0, "nothing is created before the player confirms")
+  StaticPopupDialogs.BLACKBOOK_CONFIRM_RULE.OnCancel()
+  Equals(#ns.Rules.List(), 0, "cancelling creates nothing")
+  Click(addRule)
+  StaticPopupDialogs.BLACKBOOK_CONFIRM_RULE.OnAccept()
+  Equals(#ns.Rules.List(), 1, "confirming creates the rule")
+  local rule = ns.Rules.List()[1]
+  Equals(rule.label .. "/" .. rule.source .. "/" .. rule.minTier .. "/" .. rule.verdict, "scam/guild/2/ignore",
+    "for the chosen reason, source (guild by default), tier (2 by default) and result")
+  Equals(#providers[1].provider.data, 1, "the list shows it")
+  Equals(ns.Resolver.Verdict("Smoke Target"), "notice", "three reporters are below tier 2: still only a notice")
+
+  Click(Checks(rules, ns.L.VERDICT_WARN)[1])
+  smokePopups = 0
+  Click(addRule)
+  Equals(smokePopups, 0, "a rule that only warns needs no confirmation")
+  Equals(#ns.Rules.List(), 2, "and is created at once")
+  ns.Rules.Remove(2)
+  ns.Rules.Remove(1)
+
+  -- Hiding a flag, and showing it again from the list.
+  ns.Rules.Hide("Smoke Target")
+  Equals(ns.Resolver.Verdict("Smoke Target"), nil, "a hidden flag has no verdict")
+  Equals(#providers[2].provider.data, 1, "it appears in the hidden list")
+  local hiddenRow = CreateFrame("Button", nil, providers[2])
+  hiddenView.initializer(hiddenRow, providers[2].provider.data[1])
+  Equals(hiddenRow.label.text, "Smoke Target", "with the player's name")
+  Click(hiddenRow)
+  Equals(ns.Resolver.Verdict("Smoke Target"), "notice", "clicking it brings the flag back")
+
+  -- Revoke: asks, then withdraws what was reported and deletes what was received.
+  Click(ButtonByText(ns.L.TAB_COMMUNITY))
+  smokePopups, smokeSent = 0, {}
+  Click(Button(community, ns.L.COMM_REVOKE))
+  Equals(smokePopups, 1, "revoking asks first")
+  Equals(smokeLastPopup.which, "BLACKBOOK_CONFIRM_REVOKE", "with Blackbook's popup")
+  Equals(ns.Consent.Active(), true, "nothing changes before the player confirms")
+  StaticPopupDialogs.BLACKBOOK_CONFIRM_REVOKE.OnAccept()
+  RunShortTimers()
+  Equals(ns.Consent.Active(), false, "revoking withdraws consent")
+  Equals(ns.Settings.Get("community.guild.send"), false, "and switches sending off")
+  Equals(ns.Settings.Get("community.guild.receive"), false, "and receiving")
+  Equals((ns.Aggregate.Counts()), 0, "and deletes the received reports")
+  Equals(ns.Resolver.Verdict("Smoke Target"), nil, "so the player is no longer flagged")
+  local retraction
+  for _, message in ipairs(smokeSent) do
+    if message.text:sub(1, 3) == "X1" .. string.char(9) then retraction = message end
+  end
+  Check(retraction ~= nil, "a retraction of the earlier report went out")
+  ns.Records.Remove("smoke ign")
+  IsInGuild = nil
+  Run("")
 end
 
 -- Context menu: the player menus are hooked, and a hook adds the entries.
