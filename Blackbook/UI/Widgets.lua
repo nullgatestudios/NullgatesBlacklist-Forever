@@ -120,6 +120,44 @@ function Widgets.TextArea(parent, width, height, maxLetters, onChange)
   return container
 end
 
+-- Box for a long single block of text, such as a list code. The text sits in a
+-- scroll frame, so however long it gets it stays inside the box and cannot
+-- cover the widgets around it. Without a scroll frame template it falls back to
+-- a single-line edit box. Returns the container; the edit box is container.edit.
+function Widgets.CodeBox(parent, width, height, maxLetters, onChange)
+  local container = Widgets.Create("Frame", nil, parent)
+  if not container then return nil end
+  container:SetSize(width, height)
+  local background = container:CreateTexture(nil, "BACKGROUND")
+  background:SetAllPoints(container)
+  background:SetColorTexture(0, 0, 0, 0.5)
+
+  local scroll = Widgets.Create("ScrollFrame", "UIPanelScrollFrameTemplate", container)
+  local edit = Widgets.Create("EditBox", nil, scroll or container)
+  if not edit then return nil end
+  edit:SetAutoFocus(false)
+  edit:SetMaxLetters(maxLetters)
+  if ChatFontNormal then edit:SetFontObject(ChatFontNormal) end
+  edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+  edit:SetScript("OnTextChanged", function()
+    if onChange then onChange() end
+  end)
+  if scroll then
+    scroll:SetPoint("TOPLEFT", container, "TOPLEFT", 6, -6)
+    scroll:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -28, 6)
+    edit:SetMultiLine(true)
+    edit:SetSize(width - 40, height - 12)
+    scroll:SetScrollChild(edit)
+  else
+    edit:SetPoint("TOPLEFT", container, "TOPLEFT", 6, -6)
+    edit:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -6, 6)
+  end
+  container:EnableMouse(true)
+  container:SetScript("OnMouseDown", function() edit:SetFocus() end)
+  container.edit = edit
+  return container
+end
+
 function Widgets.Button(parent, text, width, onClick)
   local button = Widgets.Create("Button", "UIPanelButtonTemplate", parent)
   if not button then return nil end

@@ -30,7 +30,8 @@ local printed = {}
 -- Unknown methods named like a client call (SetX, GetX, Enable...) do nothing, so
 -- the stub does not need every widget method spelled out. Fields stay nil.
 local NOOP_VERBS = { Set = true, Get = true, Is = true, Enable = true, Disable = true,
-  Start = true, Stop = true, Register = true, Clear = true, Show = true, Hide = true }
+  Start = true, Stop = true, Register = true, Clear = true, Show = true, Hide = true,
+  Highlight = true }
 local NoopMethods = {
   __index = function(_, key)
     local verb = type(key) == "string" and key:match("^%u%l+")
@@ -133,6 +134,24 @@ Minimap.ClearAllPoints = function(this) this.points = nil return this end
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) printed[#printed + 1] = text end }
 SlashCmdList = {}
 UISpecialFrames = {}
+
+-- Addon messages, timers and popups (sharing, section 7). Timers are recorded and
+-- run by hand; popups are recorded so the test can press their buttons.
+smokeSent, smokeRegistered, smokeTimers, smokePopups, smokeLastPopup = {}, nil, {}, 0, nil
+C_ChatInfo = {
+  RegisterAddonMessagePrefix = function(prefix) smokeRegistered = prefix return true end,
+  SendAddonMessage = function(prefix, text, channel, target)
+    smokeSent[#smokeSent + 1] = { prefix = prefix, text = text, channel = channel, target = target }
+    return 0
+  end,
+}
+C_Timer = { After = function(delay, fn) smokeTimers[#smokeTimers + 1] = { delay = delay, fn = fn } end }
+StaticPopupDialogs = {}
+StaticPopup_Show = function(which, a, b)
+  smokePopups = smokePopups + 1
+  smokeLastPopup = { which = which, a = a, b = b }
+end
+StaticPopup_Hide = function() end
 tinsert = table.insert
 GetLocale = function() return "deDE" end
 UnitName = function(unit)
@@ -721,6 +740,188 @@ Contains(Run("test ignore")[1], "|cffe61a1a", "ignore sample shows the red cross
 ns.Settings.Set("hideChat", true)
 Contains(Run("test")[1], ns.L.MSG_TEST_USAGE, "/bb test without a verdict shows the usage")
 Contains(Run("test bogus")[1], ns.L.MSG_TEST_USAGE, "/bb test with an unknown verdict shows the usage")
+
+-- --- Sharing: tabs, export, import, lists and the transfer hook ------------------------------------
+
+do
+  Equals(smokeRegistered, Const.TRANSFER_PREFIX, "the transfer prefix is registered")
+  local addonFrame
+  for _, frame in ipairs(frames) do
+    if frame.events and frame.events.CHAT_MSG_ADDON then addonFrame = frame end
+  end
+  Check(addonFrame ~= nil, "the addon message event is listened to")
+
+  -- Pump timers (0.3 s) run by hand; the long ones (timeouts) stay pending.
+  local function RunShortTimers()
+    local keep = {}
+    for _, timer in ipairs(smokeTimers) do
+      if timer.delay <= 1 then timer.fn() else keep[#keep + 1] = timer end
+    end
+    smokeTimers = keep
+  end
+  -- The tab content frame that holds a widget the predicate finds.
+  local function TabContent(predicate)
+    for _, child in ipairs(manager.children) do
+      if predicate(child) or #Find(child, predicate) > 0 then return child end
+    end
+    return nil
+  end
+  local function Button(root, text)
+    return Find(root, function(f) return f.kind == "Button" and f.text == text end)[1]
+  end
+
+  ns.Records.Save("Share One", "ignore", { spam = true }, "first")
+  ns.Records.Save("Share Two", "warn", { scam = true }, "second")
+  Run("")
+  Check(manager:IsShown(), "the window opens for the sharing tests")
+  for _, key in ipairs({ "TAB_LIST", "TAB_IMPORTED", "TAB_LISTS", "TAB_SHARE", "TAB_SETTINGS" }) do
+    Check(ButtonByText(ns.L[key]) ~= nil, key .. " is on the tab bar")
+  end
+
+  -- Share tab: export.
+  Click(ButtonByText(ns.L.TAB_SHARE))
+  local share = TabContent(function(f) return f.kind == "Button" and f.text == ns.L.SHARE_EXPORT_BUTTON end)
+  Check(share ~= nil, "the share tab is built")
+  local boxes = Find(share, function(f) return f.edit ~= nil end)
+  Equals(#boxes, 2, "the share tab has a code box and a paste box")
+  local codeBox, pasteBox = boxes[1], boxes[2]
+  Check(Find(codeBox, function(f) return f.template == "UIPanelScrollFrameTemplate" end)[1] ~= nil,
+    "the code box scrolls inside its own frame, so a long code cannot cover other widgets")
+  local inputs = Find(share, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)
+  local nameBox, sendBox = inputs[1], inputs[2]
+
+  Click(Button(share, ns.L.SHARE_EXPORT_BUTTON))
+  local exportedText = codeBox.edit.text
+  Contains(exportedText, "BK1R:", "Create code puts a list code in the box")
+  local exported = ns.Codec.Decode(exportedText)
+  Check(exported ~= nil and exported.records["share one"] ~= nil and exported.records["share two"] ~= nil,
+    "the code holds the own records")
+  Equals(exported.id, ns.Settings.Get("export.id"), "under the own export id")
+  codeBox.edit:SetText("tampered")
+  codeBox.edit._scripts.OnTextChanged(codeBox.edit, true)
+  Equals(codeBox.edit.text, exportedText, "typing in the code box changes nothing")
+  Type(nameBox, "Smoke list")
+  Click(Button(share, ns.L.SHARE_EXPORT_BUTTON))
+  Equals(ns.Codec.Decode(codeBox.edit.text).name, "Smoke list", "the list name from the box is used")
+  Equals(ns.Settings.Get("export.name"), "Smoke list", "and remembered")
+
+  -- Share tab: import.
+  local importButton = Button(share, ns.L.SHARE_IMPORT_BUTTON)
+  smokePopups = 0
+  pasteBox.edit:SetText(exportedText)
+  Click(importButton)
+  Equals(smokePopups, 0, "your own list is refused without asking")
+  pasteBox.edit:SetText("BK1R:abcd:00000000")
+  Click(importButton)
+  Equals(smokePopups, 0, "a damaged code is refused without asking")
+  Equals(next(ns.db.subscriptions), nil, "nothing was imported")
+
+  local foreign = ns.Codec.Encode({ id = "feedbeef0001", name = "Foreign list", author = "Zed Zed",
+    exported = 1700000000, records = {
+      { name = "Foreign One", verdict = "warn", labels = { spam = true }, created = 1690000000, comment = "bad ad" },
+      { name = "Foreign Two", labels = { scam = true }, comment = "scam" },
+    } })
+  pasteBox.edit:SetText(foreign)
+  Click(importButton)
+  Equals(smokePopups, 1, "a good code asks for confirmation")
+  Equals(smokeLastPopup.which, "BLACKBOOK_CONFIRM_IMPORT", "with Blackbook's popup")
+  Contains(smokeLastPopup.a, "Foreign list", "naming the list")
+  Contains(smokeLastPopup.a, "Zed Zed", "and its author")
+  Contains(smokeLastPopup.b, "2", "and its size")
+  Equals(ns.Subscriptions.Get("feedbeef0001"), nil, "nothing is imported before the player confirms")
+  StaticPopupDialogs.BLACKBOOK_CONFIRM_IMPORT.OnCancel()
+  StaticPopupDialogs.BLACKBOOK_CONFIRM_IMPORT.OnAccept()
+  Equals(ns.Subscriptions.Get("feedbeef0001"), nil, "cancelling forgets the pending import")
+  Click(importButton)
+  StaticPopupDialogs.BLACKBOOK_CONFIRM_IMPORT.OnAccept()
+  Check(ns.Subscriptions.Get("feedbeef0001") ~= nil, "confirming imports the list")
+  Equals(pasteBox.edit.text, "", "the paste box is emptied after an import")
+  Equals(ns.Resolver.Verdict("Foreign One"), "notice", "an imported entry is a notice until a rule says more")
+  pasteBox.edit:SetText("junk")
+  Click(Button(share, ns.L.SHARE_CLEAR))
+  Equals(pasteBox.edit.text, "", "Clear empties the paste box")
+
+  -- Lists tab: choose rules, which change the effective verdict.
+  Click(ButtonByText(ns.L.TAB_LISTS))
+  local listsView = lastView
+  local lists = TabContent(function(f)
+    return f.provider ~= nil and f.provider.data[1] ~= nil and f.provider.data[1].id ~= nil
+  end)
+  Check(lists ~= nil, "the lists tab shows the imported list")
+  local listBox = Find(lists, function(f) return f.provider ~= nil end)[1]
+  Equals(#listBox.provider.data, 1, "one imported list")
+  local listRow = CreateFrame("Button", nil, listBox)
+  listsView.initializer(listRow, listBox.provider.data[1])
+  Equals(listRow.name.text, "Foreign list", "the row shows the list name")
+  Equals(listRow.count.text, "2", "and its size")
+  local function Radios(text) return Find(lists, function(f) return f.kind == "CheckButton" and f.text == text end) end
+  Equals(#Radios(ns.L.VERDICT_WARN), 9, "every reason can be given a rule")
+  local function LabelIndex(id)
+    for index, entry in ipairs(Const.Labels) do if entry.id == id then return index end end
+  end
+  Click(Radios(ns.L.VERDICT_WARN)[LabelIndex("spam")])
+  Equals(ns.Subscriptions.Rule("feedbeef0001", "spam"), "warn", "the rule is saved")
+  Equals(ns.Resolver.Verdict("Foreign One"), "warn", "and changes the effective verdict")
+  Click(Radios(ns.L.VERDICT_IGNORE)[LabelIndex("scam")])
+  Equals(ns.Resolver.Verdict("Foreign Two"), "ignore", "a stronger rule ignores the player")
+  Click(Radios(ns.L.VERDICT_NOTICE)[LabelIndex("scam")])
+  Equals(ns.Resolver.Verdict("Foreign Two"), "notice", "back to a notice")
+
+  -- Imported tab: the entries with their effective verdict; a click adopts.
+  Click(ButtonByText(ns.L.TAB_IMPORTED))
+  local importedView = lastView
+  local importedBox = Find(manager, function(f)
+    return f.provider ~= nil and f.provider.data[1] ~= nil and f.provider.data[1].listId ~= nil
+  end)[1]
+  Check(importedBox ~= nil, "the imported tab lists the entries")
+  Equals(#importedBox.provider.data, 2, "both entries are listed")
+  local importedRow = CreateFrame("Button", nil, importedBox)
+  importedView.initializer(importedRow, importedBox.provider.data[1])
+  Equals(importedRow.cells.name.text, "Foreign One", "the row shows the name")
+  Equals(importedRow.cells.verdict.text, ns.L.VERDICT_WARN, "with the verdict the rules give")
+  Equals(importedRow.cells.list.text, "Foreign list", "and the list it came from")
+  Click(importedRow)
+  local adopt = Parts(_G.BlackbookEditor)
+  Equals(adopt.nameBox.text, "Foreign One", "a click opens the editor for that player")
+  Equals(adopt.comment.text, "bad ad", "prefilled with the list's comment")
+  Click(adopt.cancel)
+
+  -- Back on the lists tab, removing needs Shift.
+  Click(ButtonByText(ns.L.TAB_LISTS))
+  local removeButton = Button(lists, ns.L.LISTS_REMOVE)
+  Click(removeButton)
+  Check(ns.Subscriptions.Get("feedbeef0001") ~= nil, "a plain click does not remove the list")
+  IsShiftKeyDown = function() return true end
+  Click(removeButton)
+  IsShiftKeyDown = nil
+  Equals(ns.Subscriptions.Get("feedbeef0001"), nil, "Shift-click removes it")
+  Equals(ns.Resolver.Verdict("Foreign One"), nil, "and its entries no longer flag anyone")
+
+  -- Send tab control and the event hook, over the client's own message call.
+  smokeSent = {}
+  addonFrame._scripts.OnEvent(addonFrame, "CHAT_MSG_ADDON", Const.TRANSFER_PREFIX,
+    "OFFER" .. string.char(9) .. "12345678" .. string.char(9) .. "2" .. string.char(9) .. "5"
+    .. string.char(9) .. "Hello list", "WHISPER", "Zed Zed")
+  Equals(smokeLastPopup.which, "BLACKBOOK_TRANSFER_OFFER", "a whispered offer reaches the transfer code")
+  StaticPopupDialogs.BLACKBOOK_TRANSFER_OFFER.OnCancel()
+  local declined = smokeSent[#smokeSent]
+  Check(declined ~= nil, "declining sends an addon message")
+  Equals(declined.prefix, Const.TRANSFER_PREFIX, "on our prefix")
+  Equals(declined.channel, "WHISPER", "as a whisper")
+  Equals(declined.target, "Zed Zed", "to the sender")
+  Equals(declined.text, "DECLINE" .. string.char(9) .. "12345678", "saying DECLINE for that session")
+  RunShortTimers()
+
+  Click(ButtonByText(ns.L.TAB_SHARE))
+  smokeSent = {}
+  Type(sendBox, "Zed Zed")
+  Click(Button(share, ns.L.SHARE_SEND_BUTTON))
+  local offer = smokeSent[1]
+  Check(offer ~= nil and offer.text:sub(1, 6) == "OFFER" .. string.char(9), "the Send button offers the list")
+  Equals(offer and offer.target, "Zed Zed", "to the typed player")
+  Equals(sendBox.text, "", "and empties the name box")
+  RunShortTimers()
+end
 
 -- Context menu: the player menus are hooked, and a hook adds the entries.
 Check(menuHooks.MENU_UNIT_PLAYER ~= nil and menuHooks.MENU_UNIT_TARGET ~= nil, "player menus are hooked")

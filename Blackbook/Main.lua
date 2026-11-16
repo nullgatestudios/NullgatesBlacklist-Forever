@@ -138,6 +138,7 @@ loader:SetScript("OnEvent", function(_, event, name)
   ns.Minimap.Register()
   ns.Portrait.Register()
   ns.Tooltip.Register()
+  ns.Transfer.Register()
   if state == "newer" then Print(Text("MSG_DB_NEWER")) end
   Print(Text("MSG_LOADED"))
 end)

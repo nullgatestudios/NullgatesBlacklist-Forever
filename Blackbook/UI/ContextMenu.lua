@@ -36,6 +36,11 @@ function ContextMenu.TargetFromContext(context)
   return name
 end
 
+local function SendList(name)
+  local ok, err = ns.Transfer.Send(name)
+  if not ok then Output.Print(Output.Text(err)) end
+end
+
 -- Adds the Blackbook entries to a menu description.
 function ContextMenu.Build(root, context)
   local name = ContextMenu.TargetFromContext(context)
@@ -47,6 +52,7 @@ function ContextMenu.Build(root, context)
   if Records.Get(name) then
     root:CreateButton(Output.Text("CTX_EDIT"), function() Editor.Open(name) end)
     root:CreateButton(Output.Text("CTX_REMOVE"), function() Editor.Remove(name) end)
+    root:CreateButton(Output.Text("CTX_SEND"), function() SendList(name) end)
     return true
   end
 
@@ -63,6 +69,7 @@ function ContextMenu.Build(root, context)
       break
     end
   end
+  root:CreateButton(Output.Text("CTX_SEND"), function() SendList(name) end)
   return true
 end
 

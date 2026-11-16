@@ -4,6 +4,17 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-16
+### Added
+- Share your list as a code. The new **Share** tab turns your records into a list code (`BK1...`) that you can copy, paste anywhere and import on another account. You choose the list name, which reasons are included and whether your comments go with it.
+- Import a code from the Share tab. Blackbook checks it fully (checksum, sizes, every record) and tells you what is wrong if it is damaged, then asks for confirmation showing the list name, author, size and date.
+- Imported lists get their own tabs. **Imported** shows every entry of every list with the verdict that applies; click one to add that player to your own list. **Lists** lets you decide for each list and each reason whether it means notice, warn or ignore, and remove a list with Shift-click.
+- Send your list to another player in game, from the Share tab or the right-click menu ("Send my list"). The other player gets a popup and can accept or decline. Offers from players you ignore are dropped without a reply.
+- Your own entries still win over any imported list.
+
+### Safety
+- A list can never contain your own character, so it cannot hide your own chat. Names with control characters or colour codes are refused, codes and transfers are size-limited, and at most 50 lists are kept.
+
 ## [0.5.2] - 2026-11-16
 ### Fixed
 - The list window and the editor are drawn above other addons' frames (unit frames, buff bars, progress bars) instead of behind them, and come to the front when clicked.

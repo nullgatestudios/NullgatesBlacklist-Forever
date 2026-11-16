@@ -138,6 +138,9 @@ UI/Widgets.lua
 UI/Editor.lua          -- add/edit dialog
 UI/Manager.lua         -- main window frame and tab bar; tabs register with Manager.RegisterTab
 UI/TabList.lua         -- "My list" tab
+UI/TabImported.lua     -- "Imported" tab
+UI/TabLists.lua        -- "Lists" tab (rules per imported list)
+UI/TabShare.lua        -- "Share" tab (export, import, send)
 UI/TabSettings.lua     -- "Settings" tab
 UI/Wizard.lua
 UI/Minimap.lua
@@ -297,6 +300,9 @@ Layout: `BK1:<body>:<crc>`.
 - `body` = Base64 (standard alphabet, `=` padding) of the (possibly compressed) payload. Implement Base64 yourself in `Wire.lua`; it must work without WoW.
 - `crc` = 8 hex digits of a checksum of the **uncompressed payload**. Use Adler-32 (two 16-bit halves formatted separately so the number never overflows when formatted).
 - Decoding strips all whitespace first, because codes get line-wrapped by chat tools.
+- Compression is only used when `C_EncodingUtil` has both calls, the result is smaller **and** decompresses back to the same payload (every call is guarded with `pcall`). A `BK1C` code needs the client's decompression to be read; without it the error names that.
+- Size limits (`Const.Limits`): a pasted code of at most 5,400,000 characters and a decoded payload of at most 4,000,000 bytes, so a hostile code cannot allocate without bound. Both are checked before the work that would exhaust them.
+- Error keys: `ERR_CODE_EMPTY`, `_TOO_BIG`, `_FORMAT`, `_VERSION`, `_BASE64`, `_NOCOMPRESS`, `_CORRUPT`, `_CHECKSUM`, `_HEADER`, `_TOO_MANY`, `_RECORD` (with the line number).
 
 ### 7.2 Payload text format
 Line oriented, fields separated by a TAB, with `\t`, `\n`, `\\` escaped as `\t`, `\n`, `\\` in field values.
@@ -314,6 +320,9 @@ R ...
 - Each record name passes `Identity.Normalize`; label mask is an integer between 1 and 511; times are numbers or empty.
 - Unknown label bits are dropped, not rejected.
 - A list whose ID equals the user's own export ID is rejected as "your own list".
+- A record name containing a control character or a pipe is rejected (it could not be a player name and could inject chat markup); control characters in the list name, author and comments become spaces.
+- The player's own character is dropped from an imported list, so a list can never hide the player's own chat.
+- At most 50 imported lists are kept; replacing an existing one is always allowed.
 - The import dialog shows list name, author, record count and date. Existing subscriptions with the same ID are replaced, **keeping the user's rules**.
 
 ### 7.4 In-game transfer (`Share/Transfer.lua`)
@@ -332,6 +341,10 @@ Prefix `BKX`. Fields are TAB separated; the first field is a word.
 - Per-sender session state machine: `OFFERED -> ACCEPTED -> RECEIVING -> DONE|FAILED`. A new offer while a popup is open is auto-declined. Receivers ignore offers from players whose verdict is `ignore`.
 - Each part is accepted only for an active session, from the matching sender (`Identity.Same`), with an unseen index in range. When all parts have arrived, run the normal import validation, skipping the confirmation (the receiver already agreed).
 - A receiver session expires after 5 minutes.
+- Offers from an ignored player get no reply at all. A second offer while one is open is declined, but each sender is answered at most once per 10 seconds, so a flood does not become a flood of replies.
+- The receiver has one session at a time. Every field of every message is validated (session id of 8 lowercase hex digits, part count 1 to 600, record count 0 to 5000, part index in range and unseen, chunk 1 to 200 bytes, exact field counts) and a malformed message is dropped silently.
+- The list name in an offer is cut to 100 bytes without splitting a character, so an offer always fits an addon message. A send result counts as success for `nil`, `true` or `0`; anything else is retried.
+- The popup (`BLACKBOOK_TRANSFER_OFFER`) names the sender, the list and its size. Without the popup system the offer is declined with a notice.
 
 ---
 
@@ -462,7 +475,7 @@ Keep the layout simple and uniform; use `Widgets.lua` helpers (checkbox, radio g
   1. *My list*: search box, verdict filter, label filter, sortable columns (name, verdict, labels, comment, date), scroll list with row tooltip, add-player box, delete with Shift-click.
   2. *Imported*: all subscription records, with the effective verdict per row; click to adopt into your own list.
   3. *Lists*: choose a subscription, set the verdict per label (`notice`, `warn`, `ignore`), remove the list (Shift-click).
-  4. *Share*: export (list name, label selection, comments checkbox, Export button with a read-only code box), import (paste box, Import and Clear buttons), send to player (name box and button).
+  4. *Share*: export (list name, label selection, comments checkbox, Create code button with a read-only code box), import (paste box, Import and Clear buttons, a confirmation popup showing list name, author, size and date), send to player (name box and button). The code and paste boxes sit in a scroll frame (`Widgets.CodeBox`), because a long code in a plain multi-line box would draw over the widgets below it and steal their clicks. The export settings are saved as they are changed; typing is never overwritten by a refresh.
   5. *Community*: consent, per-source toggles, share labels, rule editor, backlog preview, hidden flags, revoke and delete.
   6. *Settings*: language, enforcement toggles, auto-reply mode with a preview line, minimap, restart wizard.
 - **Wizard** (first run, 4 pages): welcome and language; what "ignore" does; auto-reply; finish and minimap. A separate page for community consent is reachable from the Community tab, not forced on first run.
@@ -544,6 +557,9 @@ For each delivery, the reviewer checks:
 - **Global thresholds** in 8.3 are untested proposals.
 - **Aggregator hosting** (who runs it, how data reaches players) is undecided; it is planned for after M9.
 - **API availability** (section 2) must be confirmed against the actual client before M8; Battle.net messaging in particular.
+- **Whisper targets with a space.** Transfer whispers to a two-part name ("First Last"). If the client refuses a target with a space, sending fails and is reported as a failed transfer; the list code remains the fallback. Confirm in game.
+- **`C_EncodingUtil` signatures** are assumed (`CompressString(text)` returning a string, `DecompressString(text)`); the code verifies the round trip and falls back to the raw code, but a client where compression works differently simply never produces `BK1C` codes.
+- **Scroll frame template.** `UIPanelScrollFrameTemplate` is assumed for the code boxes; without it they fall back to a single-line edit box.
 
 ---
 

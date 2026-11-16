@@ -30,12 +30,6 @@ function TabList.LabelText(record)
   return Output.LabelText(record.labels)
 end
 
-local function FormatDate(timestamp)
-  local format = date or (os and os.date)
-  if not format or not timestamp then return "" end
-  return format("%Y-%m-%d", timestamp)
-end
-
 local function ShowTooltip(row)
   local record = row.record
   if not record or not GameTooltip then return end
@@ -86,7 +80,7 @@ local function SetupRow(row, record)
   row.cells.verdict:SetTextColor(color[1], color[2], color[3])
   row.cells.labels:SetText(Escape(TabList.LabelText(record)))
   row.cells.comment:SetText(Escape(record.comment or ""))
-  row.cells.date:SetText(FormatDate(record.updated or record.created))
+  row.cells.date:SetText(Output.Date(record.updated or record.created) or "")
 end
 
 local function LabelSummary(selection)

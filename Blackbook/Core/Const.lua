@@ -31,6 +31,10 @@ Const.Limits = {
   recordsPerList = 5000,
   transferChunk = 200,
   transferParts = 600,
+  codeBytes = 5400000,    -- longest pasted code accepted (5000 records, Base64)
+  payloadBytes = 4000000, -- longest payload after decoding or decompressing
+  subscriptions = 50,     -- imported lists kept at once
+  offerName = 100,        -- bytes of the list name sent in a transfer offer
 }
 
 -- Labels (section 5.1). Fixed order; never renumber, never rename an ID.
