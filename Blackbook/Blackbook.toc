@@ -1,0 +1,16 @@
+## Interface: 16001
+## Title: Blackbook
+## Notes: Personal blocklist with warnings, chat and request enforcement, and list sharing.
+## Author: Nullgate Studios
+## Version: 0.1.0
+## SavedVariables: BlackbookDB
+
+Locale/enUS.lua
+Locale/deDE.lua
+Core/Const.lua
+Core/Events.lua
+Core/Safe.lua
+Core/Identity.lua
+Core/Settings.lua
+Data/Records.lua
+Main.lua
