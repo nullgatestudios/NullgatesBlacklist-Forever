@@ -44,7 +44,7 @@ local function Widget(kind, name)
   for _, method in ipairs({
     "SetSize", "SetPoint", "SetAutoFocus", "SetMaxLetters", "SetMultiLine",
     "SetTextInsets", "SetClampedToScreen", "ClearFocus",
-    "SetFrameStrata", "SetMovable", "SetFrameLevel",
+    "SetMovable", "SetFrameLevel",
   }) do
     w[method] = me
   end
@@ -69,6 +69,8 @@ local function Widget(kind, name)
     this.events[event] = true
     return this
   end
+  w.SetFrameStrata = function(this, strata) this.strata = strata return this end
+  w.SetToplevel = function(this, value) this.toplevel = value and true or false return this end
   w.SetTexture = function(this, texture) this.texture = texture return this end
   w.GetWidth = function(this) return this.w or 0 end
   w.GetFrameLevel = function() return 1 end
@@ -393,6 +395,9 @@ local function InList(list, value)
 end
 Check(InList(UISpecialFrames, "BlackbookEditor"), "the editor is listed in UISpecialFrames")
 Check(InList(UISpecialFrames, "BlackbookManager"), "the window is listed in UISpecialFrames")
+Equals(_G.BlackbookEditor.strata, "DIALOG", "the editor sits in the DIALOG strata, above HUD addons")
+Equals(_G.BlackbookManager.strata, "DIALOG", "the window sits in the DIALOG strata, above HUD addons")
+Check(_G.BlackbookEditor.toplevel and _G.BlackbookManager.toplevel, "both windows rise when clicked")
 
 local p = Parts(editor)
 Check(p.nameBox and p.comment and p.save and p.cancel, "name box, comment box and both buttons exist")

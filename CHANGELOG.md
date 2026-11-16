@@ -4,6 +4,10 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-16
+### Fixed
+- The list window and the editor are drawn above other addons' frames (unit frames, buff bars, progress bars) instead of behind them, and come to the front when clicked.
+
 ## [0.5.1] - 2026-11-16
 ### Added
 - `/bb test <ignore|warn|notice>` shows a sample chat line with that verdict's icon, so the markers can be checked without a flagged player speaking.

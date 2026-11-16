@@ -94,6 +94,8 @@ local function Build()
   frame:SetSize(376, y + FOOTER)
   frame:SetPoint("CENTER")
   frame:SetClampedToScreen(true)
+  frame:SetFrameStrata("DIALOG") -- above other addons' HUD frames; the last shown window is on top
+  frame:SetToplevel(true)
   frame:SetMovable(true)
   frame:EnableMouse(true)
   frame:RegisterForDrag("LeftButton")

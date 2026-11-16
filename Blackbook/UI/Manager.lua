@@ -44,6 +44,8 @@ local function Build()
   window:SetSize(670, 520)
   window:SetPoint("CENTER")
   window:SetClampedToScreen(true)
+  window:SetFrameStrata("DIALOG") -- above other addons' HUD frames
+  window:SetToplevel(true)
   window:SetMovable(true)
   window:EnableMouse(true)
   window:RegisterForDrag("LeftButton")
