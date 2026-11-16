@@ -162,3 +162,11 @@ function Settings.Set(path, value)
   Events:Fire(Const.Events.SETTINGS_CHANGED)
   return value
 end
+
+-- Stores the language choice ("auto", "en" or "de"). Returns the choice, or nil
+-- when it is not one of those.
+function Settings.SetLanguage(choice)
+  if choice ~= "auto" and choice ~= "en" and choice ~= "de" then return nil end
+  Settings.Set("language", choice)
+  return choice
+end

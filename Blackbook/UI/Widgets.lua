@@ -209,3 +209,36 @@ function Widgets.MultiSelect(parent, items, onChange, options)
   end
   return picker
 end
+
+-- Scrolling list built on the client's scroll box. setup(row, data) fills a
+-- row and may create its child widgets (rows are recycled, so create them once:
+-- check row.built). Returns list with .frame (the container), :SetData(array),
+-- or nil when the client lacks the scroll box pieces. SetData keeps the scroll
+-- position, so a refresh does not jump back to the top.
+function Widgets.List(parent, rowHeight, setup)
+  if not (CreateScrollBoxListLinearView and CreateDataProvider and ScrollUtil
+    and type(ScrollUtil.InitScrollBoxListWithScrollBar) == "function") then
+    return nil
+  end
+  local container = Widgets.Create("Frame", nil, parent)
+  local box = Widgets.Create("Frame", "WowScrollBoxList", container)
+  local bar = Widgets.Create("EventFrame", "MinimalScrollBar", container)
+  if not (container and box and bar) then return nil end
+
+  box:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+  box:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -18, 0)
+  bar:SetPoint("TOPLEFT", box, "TOPRIGHT", 4, -2)
+  bar:SetPoint("BOTTOMLEFT", box, "BOTTOMRIGHT", 4, 2)
+
+  local view = CreateScrollBoxListLinearView()
+  view:SetElementExtent(rowHeight)
+  view:SetElementInitializer("Button", setup)
+  ScrollUtil.InitScrollBoxListWithScrollBar(box, bar, view)
+
+  local list = { frame = container }
+  function list:SetData(array)
+    local retain = ScrollBoxConstants and ScrollBoxConstants.RetainScrollPosition
+    box:SetDataProvider(CreateDataProvider(array), retain)
+  end
+  return list
+end

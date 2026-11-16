@@ -9,7 +9,6 @@ ns.L_DE = setmetatable({
 
   -- Slash commands.
   CMD_SETUP = "setup",
-  CMD_MINIMAP = "minimap",
   MSG_NOT_AVAILABLE = "%s ist in diesem Build noch nicht verfügbar.",
   MSG_UNKNOWN_COMMAND = "Unbekannter Befehl: %s. Tippe /bb help.",
   MSG_NEED_NAME = "Bitte gib einen Spielernamen an, zum Beispiel /bb %s First Last.",
@@ -91,4 +90,37 @@ ns.L_DE = setmetatable({
   LABEL_SPAM = "Spam oder Werbung",
   LABEL_PRIVATE_DISPUTE = "Persönlicher Streit",
   LABEL_OTHER = "Sonstiges",
+
+  -- List window (section 9).
+  TAB_LIST = "Meine Liste",
+  TAB_SETTINGS = "Einstellungen",
+  TAB_UNAVAILABLE = "Für diesen Reiter fehlen Oberflächenteile, die dieser Client nicht hat.",
+  LIST_SEARCH = "Suche",
+  FILTER_ALL = "Alle",
+  FILTER_ALL_LABELS = "Alle Gründe",
+  FILTER_LABELS_COUNT = "%d Gründe",
+  COL_NAME = "Name",
+  COL_VERDICT = "Urteil",
+  COL_LABELS = "Gründe",
+  COL_COMMENT = "Kommentar",
+  COL_DATE = "Datum",
+  LIST_ADD_NAME = "Spieler hinzufügen",
+  LIST_ADD = "Hinzufügen...",
+  LIST_COUNT = "%d von %d Einträgen",
+  LIST_HINT = "Klick: bearbeiten    Umschalt-Klick: löschen",
+
+  -- Settings tab and minimap button.
+  OPT_LANGUAGE = "Sprache",
+  LANG_AUTO = "Automatisch",
+  LANG_EN = "English",
+  LANG_DE = "Deutsch",
+  OPT_ENFORCEMENT = "Durchsetzung",
+  OPT_HIDE_CHAT = "Chat ignorierter Spieler ausblenden",
+  OPT_AUTO_DECLINE = "Einladungen, Duelle und Handel ignorierter Spieler ablehnen",
+  OPT_SHOW_NOTICES = "Hinweis anzeigen, wenn etwas blockiert wird",
+  OPT_SHOW_MINIMAP = "Minimap-Schaltfläche anzeigen",
+  MINIMAP_TOOLTIP_COUNT = "%d Einträge",
+  MINIMAP_TOOLTIP_HINT = "Linksklick: Liste öffnen. Ziehen: Schaltfläche verschieben.",
+  MSG_MINIMAP_SHOWN = "Minimap-Schaltfläche angezeigt.",
+  MSG_MINIMAP_HIDDEN = "Minimap-Schaltfläche ausgeblendet.",
 }, { __index = ns.L })

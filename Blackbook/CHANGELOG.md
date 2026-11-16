@@ -4,6 +4,15 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-16
+### Added
+- The list window (`/bb`, or click the minimap button) with a "My list" tab: search, verdict and label filters, sortable columns, a scrolling list with tooltips, an add-player box, click to edit and Shift-click to delete. The scroll position stays put when the list changes.
+- A "Settings" tab with the language and the hide-chat, auto-decline, notice and minimap options. Changes apply immediately.
+- A minimap button that you can drag around the edge. Its position is remembered. `/bb minimap` shows or hides it.
+
+### Changed
+- `/bb` with no arguments now opens the window instead of saying it is not available.
+
 ## [0.3.1] - 2026-11-16
 ### Fixed
 - The Save and Cancel buttons in the editor could not be clicked because the comment box covered them. The window is now tall enough and its layout can no longer overlap.

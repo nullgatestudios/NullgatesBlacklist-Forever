@@ -51,12 +51,11 @@ local function ToggleManager()
 end
 
 local function SetLanguage(value)
-  local choice = string.lower(value or "")
-  if choice ~= "de" and choice ~= "en" and choice ~= "auto" then
+  local choice = ns.Settings.SetLanguage(string.lower(value or ""))
+  if not choice then
     Print(Text("MSG_LANG_INVALID"))
     return
   end
-  ns.Settings.Set("language", choice)
   Print(string.format(Text("MSG_LANG_SET"), Escape(choice)))
 end
 
@@ -104,7 +103,7 @@ local function HandleSlash(input)
   elseif command == "setup" then
     Print(string.format(Text("MSG_NOT_AVAILABLE"), Text("CMD_SETUP")))
   elseif command == "minimap" then
-    Print(string.format(Text("MSG_NOT_AVAILABLE"), Text("CMD_MINIMAP")))
+    ns.Minimap.Toggle()
   elseif command == "lang" then
     SetLanguage(rest)
   elseif command == "version" then
@@ -129,6 +128,7 @@ loader:SetScript("OnEvent", function(_, event, name)
   ns.Chat.Register()
   ns.Requests.Register()
   ns.ContextMenu.Register()
+  ns.Minimap.Register()
   if state == "newer" then Print(Text("MSG_DB_NEWER")) end
   Print(Text("MSG_LOADED"))
 end)
