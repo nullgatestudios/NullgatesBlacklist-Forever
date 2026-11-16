@@ -14,6 +14,15 @@ function Widgets.Create(kind, template, parent, name)
   return nil
 end
 
+-- A frame name that is free: the base name the first time, then base2, base3...
+-- A window that is rebuilt (for a language change) must not reuse a global name.
+local nameCount = {}
+function Widgets.FrameName(base)
+  nameCount[base] = (nameCount[base] or 0) + 1
+  if nameCount[base] == 1 then return base end
+  return base .. nameCount[base]
+end
+
 function Widgets.Label(parent, text, fontObject)
   local label = parent:CreateFontString(nil, "ARTWORK", fontObject or "GameFontNormal")
   label:SetText(text or "")
@@ -246,6 +255,68 @@ function Widgets.MultiSelect(parent, items, onChange, options)
     return copy
   end
   return picker
+end
+
+-- Single choice from a list: items = { { value =, text = }, ... }. A dropdown
+-- with radio entries when the client has dropdown menus, otherwise a grid of
+-- checkboxes of which one is ticked. onChange(value) runs after the player picks.
+-- Returns choice with .frame, .height, :SetValue(value) and :GetValue().
+function Widgets.Choice(parent, items, onChange, options)
+  options = options or {}
+  local choice = { value = nil }
+  local function TextOf(value)
+    for _, item in ipairs(items) do
+      if item.value == value then return item.text end
+    end
+    return ""
+  end
+
+  local dropdown = Widgets.Create("DropdownButton", "WowStyle1DropdownTemplate", parent)
+  if dropdown and type(dropdown.SetupMenu) == "function" and MenuResponse and MenuResponse.Refresh then
+    choice.frame = dropdown
+    choice.height = 26
+    dropdown:SetWidth(options.width or 200)
+    dropdown:SetupMenu(function(_, root)
+      local create = root.CreateRadio or root.CreateCheckbox
+      for _, item in ipairs(items) do
+        create(root, item.text,
+          function() return choice.value == item.value end,
+          function()
+            choice:SetValue(item.value)
+            if onChange then onChange(item.value) end
+          end)
+      end
+    end)
+    function choice:SetValue(value)
+      self.value = value
+      if type(dropdown.SetDefaultText) == "function" then dropdown:SetDefaultText(TextOf(value)) end
+    end
+  else
+    local grid = Widgets.Create("Frame", nil, parent)
+    if not grid then return nil end
+    local columns, width = options.columns or 3, options.columnWidth or 150
+    local rows = math.ceil(#items / columns)
+    grid:SetSize(columns * width, rows * 24)
+    local checks = {}
+    for index, item in ipairs(items) do
+      local check = Widgets.Checkbox(grid, item.text, function()
+        choice:SetValue(item.value)
+        if onChange then onChange(item.value) end
+      end)
+      if not check then return nil end
+      check:SetPoint("TOPLEFT", grid, "TOPLEFT", ((index - 1) % columns) * width, -math.floor((index - 1) / columns) * 24)
+      checks[item.value] = check
+    end
+    choice.frame = grid
+    choice.height = rows * 24
+    function choice:SetValue(value)
+      self.value = value
+      for itemValue, check in pairs(checks) do check:SetChecked(itemValue == value) end
+    end
+  end
+
+  function choice:GetValue() return self.value end
+  return choice
 end
 
 -- Scrolling list built on the client's scroll box. setup(row, data) fills a

@@ -2,7 +2,7 @@
 -- the English table through the metatable.
 local _, ns = ...
 
-ns.L_DE = setmetatable({
+ns.Locale.Register("de", "Deutsch", setmetatable({
   -- Load and data state.
   MSG_LOADED = "Blackbook geladen. Tippe /bb help für die Befehle.",
   MSG_DB_NEWER = "Deine gespeicherten Daten stammen aus einer neueren Version von Blackbook. Sie bleiben unverändert.",
@@ -21,7 +21,7 @@ ns.L_DE = setmetatable({
   HELP_REMOVE = "/bb remove <Name> - einen Eintrag löschen",
   HELP_SETUP = "/bb setup - den Einrichtungsassistenten erneut anzeigen",
   HELP_MINIMAP = "/bb minimap - die Minimap-Schaltfläche ein- oder ausblenden",
-  HELP_LANG = "/bb lang de|en|auto - die Sprache setzen, danach /reload",
+  HELP_LANG = "/bb lang <Code|auto> - die Sprache sofort ändern",
   HELP_VERSION = "/bb version - die installierte Version anzeigen",
   HELP_TEST = "/bb test <ignore|warn|notice> - eine Beispielzeile mit dem Symbol dieses Urteils anzeigen",
   MSG_TEST_USAGE = "Benutze /bb test ignore, /bb test warn oder /bb test notice.",
@@ -37,8 +37,8 @@ ns.L_DE = setmetatable({
   MSG_RECORD_REMOVED = "Entfernt: %s.",
   MSG_RECORD_NOT_FOUND = "Kein Eintrag für %s.",
   MSG_SELF = "Du kannst deinen eigenen Charakter nicht eintragen.",
-  MSG_LANG_SET = "Sprache auf %s gesetzt. Tippe /reload, um sie anzuwenden.",
-  MSG_LANG_INVALID = "Nutze /bb lang de, /bb lang en oder /bb lang auto.",
+  MSG_LANG_SET = "Sprache auf %s gestellt.",
+  MSG_LANG_INVALID = "Unbekannte Sprache. Nutze /bb lang gefolgt von einem von: %s.",
 
   -- Enforcement (section 6.4).
   MSG_WHISPER_HIDDEN = "Eine Flüsternachricht von %s wurde ausgeblendet.",
@@ -118,8 +118,6 @@ ns.L_DE = setmetatable({
   -- Settings tab and minimap button.
   OPT_LANGUAGE = "Sprache",
   LANG_AUTO = "Automatisch",
-  LANG_EN = "English",
-  LANG_DE = "Deutsch",
   OPT_ENFORCEMENT = "Durchsetzung",
   OPT_HIDE_CHAT = "Chat ignorierter Spieler ausblenden",
   OPT_AUTO_DECLINE = "Einladungen, Duelle und Handel ignorierter Spieler ablehnen",
@@ -254,7 +252,7 @@ ns.L_DE = setmetatable({
   WIZ_NEXT = "Weiter",
   WIZ_FINISH = "Fertig",
   WIZ_WELCOME_TITLE = "Willkommen bei Blackbook",
-  WIZ_WELCOME = "Blackbook führt eine persönliche Liste von Spielern, mit denen du nichts zu tun haben willst. Diese kurze Einrichtung dauert etwa eine Minute. Wähle zuerst deine Sprache; eine Änderung gilt nach /reload.",
+  WIZ_WELCOME = "Blackbook führt eine persönliche Liste von Spielern, mit denen du nichts zu tun haben willst. Diese kurze Einrichtung dauert etwa eine Minute. Wähle zuerst deine Sprache; sie ändert sich sofort.",
   WIZ_IGNORE_TITLE = "Was Ignorieren bewirkt",
   WIZ_IGNORE = "Wenn du einen Spieler ignorierst, kann Blackbook seinen Chat ausblenden und seine Gruppen- und Gildeneinladungen, Duelle und Handelsanfragen ablehnen. Warnen setzt nur eine Markierung. Du kannst das jederzeit auf dem Reiter Optionen ändern.",
   WIZ_REPLY_TITLE = "Automatische Antwort",
@@ -286,4 +284,7 @@ ns.L_DE = setmetatable({
   CHECK_LOOPBACK_FAIL = "Teilen-Verbindung: FEHLGESCHLAGEN (%s). Das Teilen mit Freunden funktioniert nicht. Das Teilen mit der Gilde kann trotzdem funktionieren.",
   CHECK_REFUSED = "der Client hat das Senden abgelehnt",
   CHECK_NOECHO = "innerhalb von 3 Sekunden kam keine Nachricht zurück",
-}, { __index = ns.L })
+
+  -- Setup wizard buttons.
+  WIZ_DONE = "Fertig",
+}, { __index = ns.Locale.Base }))

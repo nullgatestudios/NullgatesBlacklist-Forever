@@ -28,7 +28,8 @@ local function LabelSummary(selection)
 end
 
 local function Build()
-  local frame = Widgets.Create("Frame", "BasicFrameTemplateWithInset", UIParent, "BlackbookEditor")
+  local name = Widgets.FrameName("BlackbookEditor")
+  local frame = Widgets.Create("Frame", "BasicFrameTemplateWithInset", UIParent, name)
   if not frame then return nil end
 
   local state = {}
@@ -101,7 +102,7 @@ local function Build()
   frame:RegisterForDrag("LeftButton")
   frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
   frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-  if UISpecialFrames then tinsert(UISpecialFrames, "BlackbookEditor") end
+  if UISpecialFrames then tinsert(UISpecialFrames, name) end
   frame:Hide()
 
   state.frame = frame
@@ -155,6 +156,14 @@ function Editor.Open(name, verdict, prefill)
   ui.frame:Show()
   return true
 end
+
+-- Closes the dialog and forgets it, so the next one is built in the current
+-- language (used when the language changes).
+function Editor.Reset()
+  if ui then ui.frame:Hide() end
+  ui = nil
+end
+ns.Locale.OnChange(Editor.Reset)
 
 -- Saves what the dialog shows. Editing the name of an existing record moves it
 -- instead of leaving the old entry behind; a name that belongs to a different

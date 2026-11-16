@@ -53,7 +53,13 @@ local function Widget(kind, name)
   w.GetText = function(this) return this.text or "" end
   w.SetScript = function(this, scriptName, fn) this._scripts[scriptName] = fn return this end
   w.Show = function(this) this.shown = true return this end
-  w.Hide = function(this) this.shown = false return this end
+  w.Hide = function(this)
+    local was = this.shown
+    this.shown = false
+    -- Like the client: OnHide runs when a shown frame is hidden.
+    if was and this._scripts.OnHide then this._scripts.OnHide(this) end
+    return this
+  end
   w.IsShown = function(this) return this.shown end
   w.SetChecked = function(this, value) this.checked = value and true or false return this end
   w.GetChecked = function(this) return this.checked end
@@ -87,6 +93,8 @@ function CreateFrame(kind, name, parent, template)
   if name then
     _G[name] = widget
     _G[name .. "TitleText"] = widget.TitleContainer.TitleText
+    local base = name:gsub("%d+$", "")
+    _G["Current" .. base] = widget
   end
   if parent and parent.children then parent.children[#parent.children + 1] = widget end
   frames[#frames + 1] = widget
@@ -253,7 +261,7 @@ Fire(folder)
 Equals(#printed, 1, "one message after loading")
 Contains(printed[1], Const.ADDON_NAME, "load message names the addon")
 Contains(printed[1], ns.L.MSG_LOADED, "load message uses the locale string")
-Check(ns.L == ns.L_DE, "a deDE client selects the German table")
+Check(ns.L == ns.Locale.Tables.de, "a deDE client selects the German table")
 
 local db = _G[savedVariable]
 Check(type(db) == "table", "the saved variable exists after loading")
@@ -315,9 +323,9 @@ Run("version")
 Contains(LastPrinted(), string.format(ns.L.MSG_VERSION, "?"), "version command copes with missing metadata API")
 
 Run("")
-Check(_G.BlackbookManager ~= nil and _G.BlackbookManager:IsShown(), "the bare command opens the window")
+Check(_G.CurrentBlackbookManager ~= nil and _G.CurrentBlackbookManager:IsShown(), "the bare command opens the window")
 Run("")
-Check(not _G.BlackbookManager:IsShown(), "the bare command closes it again")
+Check(not _G.CurrentBlackbookManager:IsShown(), "the bare command closes it again")
 
 Run("list")
 Contains(LastPrinted(), ns.L.MSG_LIST_EMPTY, "empty list message")
@@ -332,19 +340,21 @@ Run("bogus")
 Contains(LastPrinted(), string.format(ns.L.MSG_UNKNOWN_COMMAND, "bogus"), "unknown command")
 
 Run("lang xx")
-Contains(LastPrinted(), ns.L.MSG_LANG_INVALID, "invalid language rejected")
+Contains(LastPrinted(), "auto, en, de", "an invalid language is rejected and the choices are listed")
 Run("lang en")
 Equals(ns.Settings.Get("language"), "en", "language stored")
-Contains(LastPrinted(), string.format(ns.L.MSG_LANG_SET, "en"), "language confirmation")
+Equals(ns.L, ns.Locale.Tables.en, "the language changes at once, without /reload")
+Contains(LastPrinted(), string.format(ns.L.MSG_LANG_SET, "English"), "language confirmation")
 Run("lang auto")
 Equals(ns.Settings.Get("language"), "auto", "language reset to auto")
+Equals(ns.L, ns.Locale.Tables.de, "automatic follows the client (German here)")
 
 Run("ignore Self Char")
 Contains(LastPrinted(), ns.L.MSG_SELF, "own character is refused")
 
 Run("setup")
-Check(_G.BlackbookWizard ~= nil and _G.BlackbookWizard:IsShown(), "/bb setup opens the setup wizard")
-_G.BlackbookWizard:Hide()
+Check(_G.CurrentBlackbookWizard ~= nil and _G.CurrentBlackbookWizard:IsShown(), "/bb setup opens the setup wizard")
+_G.CurrentBlackbookWizard:Hide()
 
 -- Minimap button: created at load, toggled by /bb minimap, position persists.
 local minimapButton = _G.BlackbookMinimapButton
@@ -407,7 +417,7 @@ end
 
 out = Run("warn Alpha Beta")
 Equals(#out, 0, "opening the editor prints nothing")
-local editor = _G.BlackbookEditor
+local editor = _G.CurrentBlackbookEditor
 Check(editor ~= nil and editor:IsShown(), "the editor is shown")
 local function InList(list, value)
   for _, entry in ipairs(list) do if entry == value then return true end end
@@ -415,9 +425,9 @@ local function InList(list, value)
 end
 Check(InList(UISpecialFrames, "BlackbookEditor"), "the editor is listed in UISpecialFrames")
 Check(InList(UISpecialFrames, "BlackbookManager"), "the window is listed in UISpecialFrames")
-Equals(_G.BlackbookEditor.strata, "DIALOG", "the editor sits in the DIALOG strata, above HUD addons")
-Equals(_G.BlackbookManager.strata, "DIALOG", "the window sits in the DIALOG strata, above HUD addons")
-Check(_G.BlackbookEditor.toplevel and _G.BlackbookManager.toplevel, "both windows rise when clicked")
+Equals(_G.CurrentBlackbookEditor.strata, "DIALOG", "the editor sits in the DIALOG strata, above HUD addons")
+Equals(_G.CurrentBlackbookManager.strata, "DIALOG", "the window sits in the DIALOG strata, above HUD addons")
+Check(_G.CurrentBlackbookEditor.toplevel and _G.CurrentBlackbookManager.toplevel, "both windows rise when clicked")
 
 local p = Parts(editor)
 Check(p.nameBox and p.comment and p.save and p.cancel, "name box, comment box and both buttons exist")
@@ -496,7 +506,7 @@ Equals(#ns.Records.All(), 0, "all records removed")
 
 ns.Records.Save("Alpha Beta", "warn", { harassment = true }, "Pulled the boss on purpose")
 Run("ignore Alpha Beta")
-p = Parts(_G.BlackbookEditor)
+p = Parts(_G.CurrentBlackbookEditor)
 Equals(p.nameBox.text, "Alpha Beta", "an existing record is loaded")
 Equals(p.radios.warn.checked, true, "the stored verdict wins over the command")
 Equals(p.comment.text, "Pulled the boss on purpose", "the stored comment is loaded")
@@ -510,7 +520,7 @@ Check(ns.Records.Get("gamma delta") ~= nil, "the renamed record exists")
 
 ns.Records.Save("Epsilon Zeta", "ignore", { spam = true }, "Other record")
 Run("ignore Gamma Delta")
-p = Parts(_G.BlackbookEditor)
+p = Parts(_G.CurrentBlackbookEditor)
 Type(p.nameBox, "Epsilon Zeta")
 printed = {}
 Click(p.save)
@@ -519,7 +529,7 @@ Equals(ns.Records.Get("epsilon zeta").comment, "Other record", "the other record
 Check(ns.Records.Get("gamma delta") ~= nil, "the renamed record stays where it was")
 
 Run("ignore Fresh Person")
-p = Parts(_G.BlackbookEditor)
+p = Parts(_G.CurrentBlackbookEditor)
 Equals(p.comment.text, "", "a new record starts with an empty comment")
 Equals(p.labels[1].checked, false, "a new record starts without labels")
 Type(p.nameBox, "Epsilon Zeta")
@@ -532,7 +542,7 @@ Contains(LastPrinted(), string.format(ns.L.MSG_NAME_TAKEN, "Epsilon Zeta"), "a n
 Equals(ns.Records.Get("epsilon zeta").comment, "Other record", "nothing was overwritten")
 
 Click(p.cancel)
-Check(not _G.BlackbookEditor:IsShown(), "Cancel closes the editor")
+Check(not _G.CurrentBlackbookEditor:IsShown(), "Cancel closes the editor")
 ns.Records.Remove("gamma delta")
 ns.Records.Remove("epsilon zeta")
 Equals(#ns.Records.All(), 0, "editor tests left no records behind")
@@ -542,7 +552,7 @@ Equals(#ns.Records.All(), 0, "editor tests left no records behind")
 ns.Records.Save("Row One", "ignore", { scam = true }, "first comment")
 ns.Records.Save("Row Two", "warn", { spam = true }, "second comment")
 Run("")
-local manager = _G.BlackbookManager
+local manager = _G.CurrentBlackbookManager
 Check(manager:IsShown(), "the window opens")
 
 local function Box() return Find(manager, function(f) return f.provider ~= nil end)[1] end
@@ -616,10 +626,10 @@ Equals(Names(), "Row One,Row Two", "a new column starts ascending")
 -- clicking a row: edit, shift-click: delete
 IsShiftKeyDown = function() return false end
 Click(row)
-Check(_G.BlackbookEditor:IsShown(), "clicking a row opens the editor")
-Equals(Find(_G.BlackbookEditor, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)[1].text,
+Check(_G.CurrentBlackbookEditor:IsShown(), "clicking a row opens the editor")
+Equals(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)[1].text,
   "Row Two", "the editor shows that record")
-Click(Find(_G.BlackbookEditor, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1])
+Click(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1])
 IsShiftKeyDown = function() return true end
 printed = {}
 Click(row)
@@ -635,10 +645,10 @@ local addBox = inputs[2]
 local addButton = ButtonByText(ns.L.LIST_ADD)
 addBox:SetText("Typed Name")
 Click(addButton)
-Equals(Find(_G.BlackbookEditor, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)[1].text,
+Equals(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)[1].text,
   "Typed Name", "the add box opens the editor with the typed name")
 Equals(addBox.text, "", "the add box is cleared")
-Click(Find(_G.BlackbookEditor, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1])
+Click(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1])
 
 -- --- Window: settings tab -----------------------------------------------------------
 
@@ -655,13 +665,26 @@ Equals(ns.Settings.Get("hideChat"), true, "ticking saves it again")
 for _, key in ipairs({ "OPT_AUTO_DECLINE", "OPT_SHOW_NOTICES", "OPT_SHOW_MINIMAP" }) do
   Check(Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.L[key] end)[1] ~= nil, key .. " is offered")
 end
-local englishRadio = Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.L.LANG_EN end)[1]
+local germanSettingsTab = ns.L.TAB_SETTINGS
+local englishChoice = Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.Locale.Names.en end)[1]
+Check(englishChoice ~= nil, "the settings tab offers English by its own name")
+Check(Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.Locale.Names.de end)[1] ~= nil,
+  "and German by its own name")
 printed = {}
-Click(englishRadio)
+Click(englishChoice)
 Equals(ns.Settings.Get("language"), "en", "choosing a language saves it")
-Contains(LastPrinted(), "en", "the language change is confirmed")
+Equals(ns.L, ns.Locale.Tables.en, "and applies it at once")
+manager = _G.CurrentBlackbookManager
+Check(manager:IsShown(), "the window is rebuilt and stays open")
+Check(ButtonByText(ns.L.TAB_SETTINGS) ~= nil and ns.L.TAB_SETTINGS ~= germanSettingsTab, "the tab bar is now in English")
+Check(Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.L.OPT_HIDE_CHAT end)[1] ~= nil,
+  "and so are the options on the tab")
+Contains(LastPrinted(), "English", "the language change is confirmed")
 Click(Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.L.LANG_AUTO end)[1])
 Equals(ns.Settings.Get("language"), "auto", "language back to automatic")
+manager = _G.CurrentBlackbookManager
+Equals(ns.L, ns.Locale.Tables.de, "which follows the client again")
+Check(ButtonByText(ns.L.TAB_SETTINGS) ~= nil, "and the window is in that language")
 Click(ButtonByText(ns.L.TAB_LIST))
 Check(Box() ~= nil, "switching back to the list tab works")
 Run("")
@@ -875,7 +898,7 @@ do
   Equals(importedRow.cells.verdict.text, ns.L.VERDICT_WARN, "with the verdict the rules give")
   Equals(importedRow.cells.list.text, "Foreign list", "and the list it came from")
   Click(importedRow)
-  local adopt = Parts(_G.BlackbookEditor)
+  local adopt = Parts(_G.CurrentBlackbookEditor)
   Equals(adopt.nameBox.text, "Foreign One", "a click opens the editor for that player")
   Equals(adopt.comment.text, "bad ad", "prefilled with the list's comment")
   Click(adopt.cancel)
@@ -1109,7 +1132,7 @@ do
   end
   Check(loginFrame ~= nil, "the login event is listened to")
   ns.Settings.Set("setupDone", false)
-  local wizard = _G.BlackbookWizard
+  local wizard = _G.CurrentBlackbookWizard
   wizard:Hide()
   smokeTimers = {}
   loginFrame._scripts.OnEvent(loginFrame, "PLAYER_LOGIN")
@@ -1118,6 +1141,7 @@ do
   Check(waiting ~= nil, "the wizard is scheduled two seconds after login")
   Check(not wizard:IsShown(), "and does not open at once")
   RunTimers(2)
+  wizard = _G.CurrentBlackbookWizard -- a language change earlier rebuilt it under a new name
   Check(wizard:IsShown(), "on the first run the wizard opens")
   Equals(ns.Settings.Get("setupDone"), false, "opening it does not finish the setup")
   Equals(wizard.strata, "DIALOG", "it sits above other addons' frames")
@@ -1137,12 +1161,21 @@ do
   Equals(back.shown, false, "Back is hidden on the first page")
 
   -- Page 1: language.
-  local englishRadio = Checks(wizard, ns.L.LANG_EN)[1]
+  local germanTitle = ns.L.WIZ_WELCOME_TITLE
+  local englishChoice = Checks(wizard, ns.Locale.Names.en)[1]
   printed = {}
-  Click(englishRadio)
-  Equals(ns.Settings.Get("language"), "en", "the language radio saves the language")
+  Click(englishChoice)
+  Equals(ns.Settings.Get("language"), "en", "the language choice saves the language")
+  wizard = _G.CurrentBlackbookWizard
+  Check(wizard:IsShown(), "the wizard is rebuilt in the new language and stays open")
+  Check(ns.L.WIZ_WELCOME_TITLE ~= germanTitle, "(the texts are English now)")
+  Equals(ShownPages(), 1, "on the same page")
+  Equals(ns.Settings.Get("setupDone"), false, "changing the language does not finish the setup")
   Click(Checks(wizard, ns.L.LANG_AUTO)[1])
+  wizard = _G.CurrentBlackbookWizard
   Equals(ns.Settings.Get("language"), "auto", "and can go back to automatic")
+  back = Button(wizard, ns.L.WIZ_BACK)
+  nextButton = Button(wizard, ns.L.WIZ_NEXT)
 
   -- Page 2: what Ignore does.
   Click(nextButton)
@@ -1174,7 +1207,8 @@ do
 
   -- Page 4: finish.
   Click(nextButton)
-  Equals(nextButton.text, ns.L.WIZ_FINISH, "the last page offers Finish")
+  Equals(nextButton.text, ns.L.WIZ_DONE, "the last page offers a short Finish button")
+  Check(#nextButton.text < 20, "and not the long text of the page")
   local minimapCheck = Checks(wizard, ns.L.OPT_SHOW_MINIMAP)[1]
   minimapCheck:SetChecked(false)
   Click(minimapCheck)

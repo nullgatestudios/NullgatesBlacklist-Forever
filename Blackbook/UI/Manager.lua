@@ -40,7 +40,8 @@ local function SetTitle(target, title)
 end
 
 local function Build()
-  local window = Widgets.Create("Frame", "BasicFrameTemplateWithInset", UIParent, "BlackbookManager")
+  local name = Widgets.FrameName("BlackbookManager")
+  local window = Widgets.Create("Frame", "BasicFrameTemplateWithInset", UIParent, name)
   if not window then return nil end
   window:SetSize(670, 520)
   window:SetPoint("CENTER")
@@ -61,7 +62,7 @@ local function Build()
     end
   end
 
-  if UISpecialFrames then tinsert(UISpecialFrames, "BlackbookManager") end
+  if UISpecialFrames then tinsert(UISpecialFrames, name) end
   window:Hide()
   return window
 end
@@ -114,6 +115,18 @@ function Manager.Toggle()
     Manager.Show(activeId)
   end
 end
+
+-- Throws the window away and, if it was open, opens a fresh one on the same tab.
+-- Used when the language changes, so every text is rebuilt in the new language.
+function Manager.Reset()
+  local wasShown = frame and frame:IsShown()
+  local id = activeId
+  if frame then frame:Hide() end
+  frame = nil
+  for _, tab in ipairs(tabs) do tab.button, tab.frame, tab.ui = nil, nil, nil end
+  if wasShown then Manager.Show(id) end
+end
+ns.Locale.OnChange(Manager.Reset)
 
 -- Keep an open window current. Nothing runs while it is closed.
 for _, eventName in pairs(Const.Events) do

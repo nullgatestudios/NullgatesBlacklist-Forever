@@ -2,10 +2,11 @@
 ## Title: Blackbook
 ## Notes: Personal blocklist with warnings, chat and request enforcement, and list sharing.
 ## Author: Nullgate Studios
-## Version: 0.8.0
+## Version: 0.8.1
 ## IconTexture: Interface/AddOns/Blackbook/icon.tga
 ## SavedVariables: BlackbookDB
 
+Locale/Locale.lua
 Locale/enUS.lua
 Locale/deDE.lua
 Core/Const.lua

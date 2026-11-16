@@ -33,7 +33,9 @@ local function Load(relative)
   chunk("Blackbook", ns)
 end
 
+Load("Locale/Locale.lua")
 Load("Locale/enUS.lua")
+Load("Locale/deDE.lua")
 Load("Core/Const.lua")
 Load("Core/Events.lua")
 Load("Core/Safe.lua")
@@ -2484,12 +2486,7 @@ end)
 
 Group("Locale parity", function()
   -- run.lua only loads the English table, so load the German one on the side.
-  local other = {}
-  local chunk = assert(loadfile(root .. "/Blackbook/Locale/enUS.lua"))
-  chunk("Blackbook", other)
-  local deChunk = assert(loadfile(root .. "/Blackbook/Locale/deDE.lua"))
-  deChunk("Blackbook", other)
-  local en, de = other.L, other.L_DE
+  local en, de = ns.Locale.Tables.en, ns.Locale.Tables.de
 
   local missing, extra = {}, {}
   for key in pairs(en) do if rawget(de, key) == nil then missing[#missing + 1] = key end end
@@ -2876,6 +2873,175 @@ Group("Net self test", function()
   Net.OnMessage(PREFIX, "T1\tzzzzzzzz", "WHISPER", "Bob Two")
   UnitName = nil
   Net.Reset()
+end)
+
+-- --- Locale: registry and the immediate switch (section 10) ------------------------------------------------
+
+Group("Locale registry", function()
+  local Locale, Settings = ns.Locale, ns.Settings
+  FreshDb()
+  EQ(table.concat(Locale.Order, ","), "en,de", "English comes first, then the other languages")
+  EQ(Locale.Names.en, "English", "a language is shown under its own name")
+  EQ(Locale.Names.de, "Deutsch", "German too")
+  EQ(Locale.Base, Locale.Tables.en, "English is the base every language falls back to")
+
+  EQ(Locale.IsValid("auto"), true, "auto is valid")
+  EQ(Locale.IsValid("de"), true, "a registered code is valid")
+  EQ(Locale.IsValid("xx"), false, "an unknown code is not")
+  EQ(Locale.IsValid(nil), false, "nil is not")
+  EQ(Locale.IsValid(5), false, "a number is not")
+
+  local savedLocale = GetLocale
+  GetLocale = function() return "deDE" end
+  EQ(Locale.Resolve("auto"), "de", "automatic follows a German client")
+  EQ(Locale.Resolve(nil), "de", "nothing saved also follows the client")
+  GetLocale = function() return "enGB" end
+  EQ(Locale.Resolve("auto"), "en", "automatic follows a British English client")
+  GetLocale = function() return "frFR" end
+  EQ(Locale.Resolve("auto"), "en", "a client language without a translation falls back to English")
+  GetLocale = function() return "zhCN" end
+  EQ(Locale.Resolve("auto"), "en", "and so does one the addon does not have yet")
+  GetLocale = nil
+  EQ(Locale.Resolve("auto"), "en", "no GetLocale at all means English")
+  EQ(Locale.Resolve("de"), "de", "an explicit choice wins over the client")
+  EQ(Locale.Resolve("xx"), "en", "an unknown choice falls back to English")
+
+  -- Choices for the pickers.
+  local choices = Locale.Choices()
+  EQ(#choices, 3, "automatic plus every language")
+  EQ(choices[1].value, "auto", "automatic is first")
+  EQ(choices[1].text, ns.L.LANG_AUTO, "under its translated name")
+  EQ(choices[2].value .. "/" .. choices[2].text, "en/English", "then English")
+  EQ(choices[3].value .. "/" .. choices[3].text, "de/Deutsch", "then German")
+  EQ(Locale.NameOf("de"), "Deutsch", "the name of a language")
+  EQ(Locale.NameOf("auto"), ns.L.LANG_AUTO, "the name of automatic")
+
+  -- Switching takes effect at once and tells the windows to rebuild.
+  local rebuilt = 0
+  Locale.OnChange(function() rebuilt = rebuilt + 1 end)
+  GetLocale = function() return "enUS" end
+  Locale.current = nil
+  Settings.Set("language", "auto")
+  OK(Locale.Apply(), "applying the first time changes the language")
+  EQ(ns.L, Locale.Tables.en, "English is active")
+  EQ(rebuilt, 1, "the windows were told to rebuild")
+  EQ(Locale.Apply(), false, "applying the same language again changes nothing")
+  EQ(rebuilt, 1, "and rebuilds nothing")
+
+  EQ(Locale.Set("de"), "de", "choosing German works")
+  EQ(ns.L, Locale.Tables.de, "German is active at once, without a reload")
+  EQ(Settings.Get("language"), "de", "and saved")
+  EQ(ns.Output.Text("TAB_LIST"), ns.Locale.Tables.de.TAB_LIST, "texts come out in German")
+  EQ(rebuilt, 2, "the windows rebuilt once")
+  EQ(Locale.Set("de"), "de", "choosing it again is fine")
+  EQ(rebuilt, 2, "and does nothing")
+  EQ(Locale.Set("xx"), nil, "an unknown language is refused")
+  EQ(Settings.Get("language"), "de", "and nothing is saved")
+  EQ(ns.L, Locale.Tables.de, "nor changed")
+  EQ(Locale.Set("auto"), "auto", "automatic follows the client again")
+  EQ(ns.L, Locale.Tables.en, "which is English here")
+  EQ(rebuilt, 3, "with another rebuild")
+
+  -- A language only needs the texts it translates: the rest comes from English.
+  Locale.Base.TEMPORARY_KEY = "english only"
+  EQ(Locale.Tables.de.TEMPORARY_KEY, "english only", "a key missing in German falls back to English")
+  Locale.Base.TEMPORARY_KEY = nil
+
+  GetLocale = savedLocale
+  Settings.Set("language", "auto")
+  Locale.current = nil
+  Locale.Apply()
+end)
+
+-- --- Widgets: the single-choice picker -------------------------------------------------------------------
+
+Group("Choice picker", function()
+  local Widgets = ns.Widgets
+  local items = { { value = "a", text = "Alpha" }, { value = "b", text = "Beta" }, { value = "c", text = "Gamma" } }
+
+  -- Dropdown path.
+  local generator, caption
+  local dropdown = {
+    SetWidth = function() end,
+    SetDefaultText = function(_, text) caption = text end,
+    SetupMenu = function(_, fn) generator = fn end,
+  }
+  CreateFrame = function(_, _, _, template)
+    if template == "WowStyle1DropdownTemplate" then return dropdown end
+    return nil
+  end
+  MenuResponse = { Refresh = "refresh" }
+  local picked = {}
+  local choice = Widgets.Choice({}, items, function(value) picked[#picked + 1] = value end)
+  OK(choice ~= nil and choice.frame == dropdown, "the dropdown is used when the client has it")
+  EQ(choice.height, 26, "dropdown height")
+  choice:SetValue("b")
+  EQ(caption, "Beta", "the caption shows the chosen item")
+  EQ(choice:GetValue(), "b", "GetValue returns it")
+  local radios = {}
+  local root = { CreateRadio = function(_, text, isSelected, setSelected)
+    radios[#radios + 1] = { text = text, isSelected = isSelected, setSelected = setSelected }
+  end }
+  generator(dropdown, root)
+  EQ(#radios, 3, "one radio entry per item")
+  EQ(radios[1].text, "Alpha", "with the item's text")
+  EQ(radios[2].isSelected(), true, "the chosen one is selected")
+  EQ(radios[1].isSelected(), false, "the others are not")
+  radios[3].setSelected()
+  EQ(choice:GetValue(), "c", "picking an entry chooses it")
+  EQ(caption, "Gamma", "and updates the caption")
+  EQ(picked[1], "c", "and tells the caller")
+  local checkboxRoot = { CreateCheckbox = function(_, text) radios[#radios + 1] = { text = text } end }
+  radios = {}
+  generator(dropdown, checkboxRoot)
+  EQ(#radios, 3, "without radio entries the menu falls back to checkbox entries")
+
+  -- Grid path: no dropdown, so one checkbox per item and only one ticked.
+  local function Stub()
+    local widget = { scripts = {} }
+    function widget:SetSize() end
+    function widget:SetPoint() end
+    function widget:SetText(text) self.text = text end
+    function widget:SetScript(name, fn) self.scripts[name] = fn end
+    function widget:SetChecked(value) self.checked = value and true or false end
+    function widget:GetChecked() return self.checked end
+    function widget:CreateFontString() return Stub() end
+    return widget
+  end
+  local created = {}
+  CreateFrame = function(kind, _, _, template)
+    if template == "WowStyle1DropdownTemplate" then return nil end
+    local widget = Stub()
+    created[#created + 1] = widget
+    return widget
+  end
+  MenuResponse = nil
+  picked = {}
+  local grid = Widgets.Choice({}, items, function(value) picked[#picked + 1] = value end, { columns = 2, columnWidth = 100 })
+  OK(grid ~= nil, "a grid is built without a dropdown")
+  EQ(grid.height, 48, "three items in two columns take two rows")
+  local boxes = {}
+  for _, widget in ipairs(created) do if widget.text then boxes[#boxes + 1] = widget end end
+  EQ(#boxes, 3, "one checkbox per item")
+  EQ(boxes[2].text, "Beta", "with the item's text")
+  grid:SetValue("a")
+  EQ(boxes[1].checked, true, "SetValue ticks the item")
+  EQ(boxes[2].checked, false, "and unticks the others")
+  boxes[3].scripts.OnClick(boxes[3])
+  EQ(grid:GetValue(), "c", "clicking a checkbox chooses it")
+  EQ(boxes[1].checked, false, "the old choice is unticked")
+  EQ(boxes[3].checked, true, "the new one is ticked")
+  EQ(picked[1], "c", "and the caller is told")
+
+  CreateFrame = function() return nil end
+  EQ(Widgets.Choice({}, items, nil), nil, "without any frame support the picker is nil")
+  CreateFrame = nil
+  MenuResponse = nil
+
+  -- Window names stay free when a window is rebuilt.
+  EQ(Widgets.FrameName("BlackbookTestWindow"), "BlackbookTestWindow", "the first window keeps the plain name")
+  EQ(Widgets.FrameName("BlackbookTestWindow"), "BlackbookTestWindow2", "a rebuilt one gets a new name")
+  EQ(Widgets.FrameName("BlackbookTestWindow"), "BlackbookTestWindow3", "and again")
 end)
 
 -- --- Summary -------------------------------------------------------------------

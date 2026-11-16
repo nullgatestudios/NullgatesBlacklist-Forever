@@ -105,6 +105,7 @@ Files inside `Blackbook/` (load order = TOC order):
 
 ```
 Blackbook.toc
+Locale/Locale.lua      -- language registry and the immediate switch (loads first)
 Locale/enUS.lua
 Locale/deDE.lua
 Core/Const.lua         -- names, prefixes, limits, label table, tier tables (pure)
@@ -478,7 +479,10 @@ Keep the layout simple and uniform; use `Widgets.lua` helpers (checkbox, radio g
 ## 10. Localization
 
 - Strings live in `Locale/enUS.lua` and `Locale/deDE.lua` as keys of a table `ns.L`. Missing German keys fall back to English via a metatable. Write all strings and keys yourself; do not reuse wording from other addons.
-- `language = "auto"` follows `GetLocale()`. Changing the language shows a "type /reload" notice.
+- Each language file registers itself with `Locale.Register(code, ownName, table)`; every language falls back to English per key through a metatable. `language = "auto"` follows `GetLocale()` (client locale to code), and a choice that is not registered falls back to English.
+- **A language change takes effect at once, with no `/reload`.** `Locale.Set(choice)` saves the choice, swaps `ns.L` and runs the registered hooks; the main window, the editor and the wizard throw their frames away and are rebuilt in the new language (the wizard reopens on the same page and the window on the same tab). Frames are rebuilt rather than relabelled because a text-to-key lookup is ambiguous (two keys can share one translation). A rebuilt window gets a new global name (`Widgets.FrameName`). Anything typed but not saved in a rebuilt window is lost, which is acceptable for a rare action.
+- The language pickers (Settings tab, wizard) are one `Widgets.Choice`: a dropdown with radio entries, or a grid of checkboxes if the client has no dropdown. They list *Automatic* and then every registered language under its own name, so adding a language needs no UI change.
+- Characters outside the client's fonts cannot be shown. Latin, Cyrillic and Chinese/Japanese/Korean render on current clients; Arabic, Hindi, Bengali and Urdu scripts do not.
 - Format strings use `%s` and `%d`. Escape `|` as `||` whenever user text is placed into chat or tooltips.
 
 ---

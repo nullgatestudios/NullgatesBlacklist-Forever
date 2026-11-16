@@ -4,6 +4,7 @@ local _, ns = ...
 
 local L = {}
 ns.L = L
+ns.Locale.Register("en", "English", L)
 
 -- Load and data state.
 L.MSG_LOADED = "Blackbook loaded. Type /bb help for the commands."
@@ -23,7 +24,7 @@ L.HELP_WARN = "/bb warn <name> - warn about a player"
 L.HELP_REMOVE = "/bb remove <name> - delete a record"
 L.HELP_SETUP = "/bb setup - show the setup wizard again"
 L.HELP_MINIMAP = "/bb minimap - show or hide the minimap button"
-L.HELP_LANG = "/bb lang de|en|auto - set the language, then /reload"
+L.HELP_LANG = "/bb lang <code|auto> - change the language at once"
 L.HELP_VERSION = "/bb version - show the installed version"
 L.HELP_TEST = "/bb test <ignore|warn|notice> - show a sample chat line with that verdict's icon"
 L.MSG_TEST_USAGE = "Use /bb test ignore, /bb test warn or /bb test notice."
@@ -39,8 +40,8 @@ L.MSG_RECORD_SAVED = "Saved: %s (%s)."
 L.MSG_RECORD_REMOVED = "Removed: %s."
 L.MSG_RECORD_NOT_FOUND = "No record for %s."
 L.MSG_SELF = "You cannot add your own character."
-L.MSG_LANG_SET = "Language set to %s. Type /reload to apply it."
-L.MSG_LANG_INVALID = "Use /bb lang de, /bb lang en or /bb lang auto."
+L.MSG_LANG_SET = "Language set to %s."
+L.MSG_LANG_INVALID = "Unknown language. Use /bb lang followed by one of: %s."
 
 -- Enforcement (section 6.4).
 L.MSG_WHISPER_HIDDEN = "Hid a whisper from %s."
@@ -120,8 +121,6 @@ L.LIST_HINT = "Click: edit    Shift-click: delete"
 -- Settings tab and minimap button.
 L.OPT_LANGUAGE = "Language"
 L.LANG_AUTO = "Automatic"
-L.LANG_EN = "English"
-L.LANG_DE = "Deutsch"
 L.OPT_ENFORCEMENT = "Enforcement"
 L.OPT_HIDE_CHAT = "Hide chat from ignored players"
 L.OPT_AUTO_DECLINE = "Decline invites, duels and trades from ignored players"
@@ -256,7 +255,7 @@ L.WIZ_BACK = "Back"
 L.WIZ_NEXT = "Next"
 L.WIZ_FINISH = "Finish"
 L.WIZ_WELCOME_TITLE = "Welcome to Blackbook"
-L.WIZ_WELCOME = "Blackbook keeps a personal list of players you do not want to deal with. This short setup takes about a minute. Choose your language first; a change takes effect after /reload."
+L.WIZ_WELCOME = "Blackbook keeps a personal list of players you do not want to deal with. This short setup takes about a minute. Choose your language first; it changes at once."
 L.WIZ_IGNORE_TITLE = "What Ignore does"
 L.WIZ_IGNORE = "When you ignore a player, Blackbook can hide their chat and decline their party and guild invites, duels and trades. Warn only adds a marker. You can change this at any time on the Settings tab."
 L.WIZ_REPLY_TITLE = "Automatic reply"
@@ -288,3 +287,6 @@ L.CHECK_LOOPBACK_OK = "Sharing connection: OK. A message to your own name arrive
 L.CHECK_LOOPBACK_FAIL = "Sharing connection: FAILED (%s). Sharing with friends will not work. Guild sharing may still work."
 L.CHECK_REFUSED = "the client refused to send"
 L.CHECK_NOECHO = "no message came back within 3 seconds"
+
+-- Setup wizard buttons.
+L.WIZ_DONE = "Finish"

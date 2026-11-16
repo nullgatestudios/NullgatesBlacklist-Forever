@@ -9,19 +9,6 @@ local function VerdictText(verdict)
   return Text("VERDICT_" .. string.upper(tostring(verdict or "")))
 end
 
--- "auto" follows the client locale; de and en are explicit (section 10).
-local function ApplyLanguage()
-  local choice = ns.Settings.Get("language")
-  if choice ~= "de" and choice ~= "en" then
-    local client = "enUS"
-    if type(GetLocale) == "function" then client = GetLocale() or client end
-    choice = (client == "deDE") and "de" or "en"
-  end
-  if choice == "de" and ns.L_DE then
-    ns.L = ns.L_DE
-  end
-end
-
 local function ListRecords()
   local records = ns.Records.All()
   if #records == 0 then
@@ -51,12 +38,14 @@ local function ToggleManager()
 end
 
 local function SetLanguage(value)
-  local choice = ns.Settings.SetLanguage(string.lower(value or ""))
+  local choice = ns.Locale.Set(string.lower(value or ""))
   if not choice then
-    Print(Text("MSG_LANG_INVALID"))
+    local codes = { "auto" }
+    for _, entry in ipairs(ns.Locale.List()) do codes[#codes + 1] = entry.code end
+    Print(string.format(Text("MSG_LANG_INVALID"), table.concat(codes, ", ")))
     return
   end
-  Print(string.format(Text("MSG_LANG_SET"), Escape(choice)))
+  Print(string.format(Text("MSG_LANG_SET"), Escape(ns.Locale.NameOf(choice))))
 end
 
 -- The version lives only in the TOC (section 15.1); read it from there.
@@ -139,7 +128,7 @@ loader:SetScript("OnEvent", function(_, event, name)
   end
   if event ~= "ADDON_LOADED" or name ~= addonName then return end
   local _, state = ns.Settings.Init()
-  ApplyLanguage()
+  ns.Locale.Apply()
   ns.Chat.Register()
   ns.Requests.Register()
   ns.ContextMenu.Register()

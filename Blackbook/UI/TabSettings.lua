@@ -22,13 +22,10 @@ local TOGGLES = {
 local function Build(content)
   local controls = {}
 
-  local language = Widgets.RadioGroup(content, {
-    { value = "auto", text = Text("LANG_AUTO") },
-    { value = "en", text = Text("LANG_EN") },
-    { value = "de", text = Text("LANG_DE") },
-  }, function(value)
-    if Settings.SetLanguage(value) then
-      Print(string.format(Text("MSG_LANG_SET"), Escape(value)))
+  local language = Widgets.Choice(content, ns.Locale.Choices(), function(value)
+    -- The language changes at once: the window is rebuilt in it.
+    if ns.Locale.Set(value) then
+      Print(string.format(Output.Text("MSG_LANG_SET"), Escape(ns.Locale.NameOf(value))))
     end
   end)
   if not language then return nil end
@@ -40,8 +37,7 @@ local function Build(content)
   end
 
   Place(Widgets.Label(content, Text("OPT_LANGUAGE")), 4, 22)
-  Place(language.buttons[1].button, 0, 40)
-  language:Chain(120)
+  Place(language.frame, 4, language.height + 14)
 
   Place(Widgets.Label(content, Text("OPT_ENFORCEMENT")), 4, 22)
   for _, toggle in ipairs(TOGGLES) do

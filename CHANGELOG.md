@@ -4,6 +4,15 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-16
+### Fixed
+- On the last page of the setup wizard the Finish button showed the whole page text, which ran across the screen and over the other buttons. It now says "Finish".
+- The setup wizard has less empty space between its text and its controls.
+
+### Changed
+- The language changes at once. There is no `/reload` any more: the window, the editor and the wizard are rebuilt in the new language the moment you pick it.
+- The language choice is a dropdown instead of a row of tick boxes, so it has room for many languages. Each language is listed under its own name. `/bb lang` lists the codes it accepts.
+
 ## [0.8.0] - 2026-11-16
 ### Added
 - `/bb check` tests this client without needing anyone else. It lists which features Blackbook relies on (chat filter, right-click menu, tooltips, lists, dropdowns, popups, addon messages, friend list and more) and marks any that are missing. It then whispers a short message to your own character and waits for it to come back, which shows whether sharing with friends and guild can work on your client.

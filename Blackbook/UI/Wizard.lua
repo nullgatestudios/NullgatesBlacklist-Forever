@@ -42,7 +42,7 @@ local function NewPage(frame, titleKey, bodyKey)
   body:SetWidth(WIDTH - 40)
   body:SetJustifyH("LEFT")
   body:SetJustifyV("TOP")
-  local y = 140 -- the body text sits in the first 140 pixels
+  local y = 110 -- the body text sits in the first 110 pixels
   local function Place(widget, indent, height)
     widget:SetPoint("TOPLEFT", page, "TOPLEFT", indent, -y)
     y = y + height
@@ -52,7 +52,8 @@ local function NewPage(frame, titleKey, bodyKey)
 end
 
 local function Build()
-  local frame = Widgets.Create("Frame", "BasicFrameTemplateWithInset", UIParent, "BlackbookWizard")
+  local name = Widgets.FrameName("BlackbookWizard")
+  local frame = Widgets.Create("Frame", "BasicFrameTemplateWithInset", UIParent, name)
   if not frame then return nil end
   frame:SetSize(WIDTH, HEIGHT)
   frame:SetPoint("CENTER")
@@ -70,13 +71,10 @@ local function Build()
 
   -- Page 1: welcome and language.
   local welcome, welcomePlace = NewPage(frame, "WIZ_WELCOME_TITLE", "WIZ_WELCOME")
-  local language = Widgets.RadioGroup(welcome or frame, {
-    { value = "auto", text = Text("LANG_AUTO") },
-    { value = "en", text = Text("LANG_EN") },
-    { value = "de", text = Text("LANG_DE") },
-  }, function(value)
-    if Settings.SetLanguage(value) then
-      Print(string.format(Text("MSG_LANG_SET"), Escape(value)))
+  local language = Widgets.Choice(welcome or frame, ns.Locale.Choices(), function(value)
+    -- The language changes at once: the wizard is rebuilt in it and reopens here.
+    if ns.Locale.Set(value) then
+      Print(string.format(Output.Text("MSG_LANG_SET"), Escape(ns.Locale.NameOf(value))))
     end
   end)
 
@@ -109,8 +107,7 @@ local function Build()
     return nil
   end
 
-  welcomePlace(language.buttons[1].button, 0, 34)
-  language:Chain(120)
+  welcomePlace(language.frame, 0, language.height + 8)
   ignorePlace(hideChat, 0, 30)
   ignorePlace(autoDecline, 0, 30)
   finishPlace(minimap, 0, 30)
@@ -137,7 +134,7 @@ local function Build()
   frame:SetScript("OnHide", function()
     if state.opened then Settings.Set("setupDone", true) end
   end)
-  if UISpecialFrames then tinsert(UISpecialFrames, "BlackbookWizard") end
+  if UISpecialFrames then tinsert(UISpecialFrames, name) end
 
   state.frame = frame
   return state
@@ -153,12 +150,12 @@ function Wizard.Go(page)
   end
   ui.refreshers[page]()
   if page == 1 then ui.back:Hide() else ui.back:Show() end
-  ui.next:SetText(Text(page == PAGE_COUNT and "WIZ_FINISH" or "WIZ_NEXT"))
+  ui.next:SetText(Text(page == PAGE_COUNT and "WIZ_DONE" or "WIZ_NEXT"))
   ui.step:SetText(string.format(Text("WIZ_STEP"), page, PAGE_COUNT))
 end
 
--- Opens the wizard at the first page. Returns true when it opened.
-function Wizard.Open()
+-- Opens the wizard at a page (the first by default). Returns true when it opened.
+function Wizard.Open(page)
   if not ui then ui = Build() end
   if not ui then
     Print(Text("MSG_NO_UI"))
@@ -166,9 +163,22 @@ function Wizard.Open()
   end
   ui.opened = true
   ui.frame:Show()
-  Wizard.Go(1)
+  Wizard.Go(page or 1)
   return true
 end
+
+-- Throws the window away and, if it was open, opens a fresh one on the same page
+-- (used when the language changes). Closing it this way does not finish the setup.
+function Wizard.Reset()
+  local old = ui
+  ui = nil
+  if not old then return end
+  local wasShown, page = old.frame:IsShown(), old.page
+  old.opened = false
+  old.frame:Hide()
+  if wasShown then Wizard.Open(page) end
+end
+ns.Locale.OnChange(Wizard.Reset)
 
 -- Opens the wizard on the first run only.
 function Wizard.MaybeOpen()
