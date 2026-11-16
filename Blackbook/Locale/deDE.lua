@@ -53,8 +53,19 @@ ns.L_DE = setmetatable({
   VERDICT_WARN = "Warnen",
   VERDICT_NOTICE = "Hinweis",
 
-  -- Temporary editor (replaced by UI/Editor.lua in M3).
-  EDITOR_TITLE = "Blackbook-Eintrag",
+  -- Editor and context menu (section 9).
+  EDITOR_TITLE_NEW = "Zu Blackbook hinzufügen",
+  EDITOR_TITLE_EDIT = "Eintrag bearbeiten",
+  EDITOR_LABELS_NONE = "Nichts ausgewählt",
+  EDITOR_LABELS_COUNT = "%d ausgewählt",
+  MSG_NAME_TAKEN = "Für %s gibt es schon einen Eintrag. Bearbeite stattdessen diesen.",
+  MSG_NO_MENU = "Die Einbindung ins Rechtsklickmenü ist in diesem Client nicht verfügbar, deshalb fehlen die Menüeinträge.",
+  CTX_TITLE = "Blackbook",
+  CTX_IGNORE = "Ignorieren...",
+  CTX_WARN = "Warnen...",
+  CTX_EDIT = "Bearbeiten...",
+  CTX_REMOVE = "Entfernen",
+  CTX_ADOPT = "Übernehmen...",
   EDITOR_NAME = "Spielername",
   EDITOR_VERDICT = "Urteil",
   EDITOR_LABELS = "Gründe",

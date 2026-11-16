@@ -43,11 +43,9 @@ local function CopyLabels(labels)
   return copy, count
 end
 
--- Creates or updates a record. Returns the record, or nil and a locale key
--- describing what is missing.
-function Records.Save(name, verdict, labels, comment)
-  local store = Store()
-  if not store then return nil, "ERR_DB" end
+-- Validates and normalizes the fields of a record. Returns a table with the
+-- clean name, labels and comment, or nil and a locale key naming the problem.
+local function Prepare(name, verdict, labels, comment)
   local normalized = Identity.Normalize(name)
   if not normalized then return nil, "ERR_NAME" end
   if verdict ~= "ignore" and verdict ~= "warn" then return nil, "ERR_VERDICT" end
@@ -56,7 +54,25 @@ function Records.Save(name, verdict, labels, comment)
   local text = Safe.Str(comment)
   text = text and Trim(text) or ""
   if text == "" then return nil, "ERR_COMMENT" end
-  if #text > Const.Limits.comment then return nil, "ERR_COMMENT_LENGTH" end
+  if Identity.CharCount(text) > Const.Limits.comment then return nil, "ERR_COMMENT_LENGTH" end
+  return { name = normalized, labels = copy, comment = text }
+end
+
+-- The locale key of the first problem with these fields, or nil when they are
+-- valid. The editor uses this to enable its Save button.
+function Records.Check(name, verdict, labels, comment)
+  local _, err = Prepare(name, verdict, labels, comment)
+  return err
+end
+
+-- Creates or updates a record. Returns the record, or nil and a locale key
+-- describing what is missing.
+function Records.Save(name, verdict, labels, comment)
+  local store = Store()
+  if not store then return nil, "ERR_DB" end
+  local clean, err = Prepare(name, verdict, labels, comment)
+  if not clean then return nil, err end
+  local normalized, copy, text = clean.name, clean.labels, clean.comment
 
   local key = string.lower(normalized)
   local now = time()

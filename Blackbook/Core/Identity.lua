@@ -28,6 +28,18 @@ function Identity.Normalize(text)
   return value
 end
 
+-- Number of characters in a UTF-8 string (continuation bytes are not counted),
+-- so limits such as "255 characters" do not punish umlauts.
+function Identity.CharCount(text)
+  if type(text) ~= "string" then return 0 end
+  local count = 0
+  for index = 1, #text do
+    local byte = string.byte(text, index)
+    if byte < 0x80 or byte >= 0xC0 then count = count + 1 end
+  end
+  return count
+end
+
 -- Target key: lowercased normalized name, used as the record table key.
 function Identity.Key(name)
   local normalized = Identity.Normalize(name)
