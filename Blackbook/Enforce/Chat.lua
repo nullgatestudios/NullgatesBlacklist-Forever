@@ -57,7 +57,25 @@ function Chat.Filter(_, event, msg, author, ...)
     if event == "CHAT_MSG_WHISPER" then NoticeWhisper(name) end
     return true
   end
-  return false, Markers.Icon(verdict) .. " " .. text, author, ...
+  return false, Chat.Mark(verdict, text), author, ...
+end
+
+-- The text of a shown chat line for a flagged author.
+function Chat.Mark(verdict, text)
+  return Markers.Icon(verdict) .. " " .. text
+end
+
+-- /bb test <verdict>: prints a sample line the way the filter would show it, so
+-- the icons can be checked in game without a flagged player speaking. An ignored
+-- line is only shown when chat hiding is off; otherwise the real one is hidden.
+function Chat.Preview(verdict)
+  local sample = Output.Text("MSG_TEST_SAMPLE")
+  if verdict == "ignore" and Settings.Get("hideChat") then
+    Output.Print(Output.Text("MSG_TEST_HIDDEN"))
+    return
+  end
+  local frame = DEFAULT_CHAT_FRAME
+  if frame then frame:AddMessage(Chat.Mark(verdict, "[" .. Output.Text("VERDICT_" .. string.upper(verdict)) .. "] " .. sample)) end
 end
 
 local registered = false

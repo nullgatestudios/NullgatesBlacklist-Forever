@@ -25,7 +25,11 @@ ns.L_DE = setmetatable({
   HELP_MINIMAP = "/bb minimap - die Minimap-Schaltfläche ein- oder ausblenden",
   HELP_LANG = "/bb lang de|en|auto - die Sprache setzen, danach /reload",
   HELP_VERSION = "/bb version - die installierte Version anzeigen",
-  HELP_HELP = "/bb help - diesen Text anzeigen",
+  HELP_TEST = "/bb test <ignore|warn|notice> - eine Beispielzeile mit dem Symbol dieses Urteils anzeigen",
+  MSG_TEST_USAGE = "Benutze /bb test ignore, /bb test warn oder /bb test notice.",
+  MSG_TEST_HIDDEN = "Der Chat ignorierter Spieler wird ausgeblendet. Schalte \"Chat ausblenden\" in den Einstellungen aus, um die Markierung zu sehen.",
+  MSG_TEST_SAMPLE = "Beispielspieler: Das ist eine Testnachricht.",
+  HELP_HELP ="/bb help - diesen Text anzeigen",
   MSG_VERSION = "Version %s.",
 
   -- Results.

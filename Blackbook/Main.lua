@@ -74,7 +74,7 @@ local function ShowHelp()
   local keys = {
     "HELP_HEADER", "HELP_TOGGLE", "HELP_LIST", "HELP_IGNORE", "HELP_WARN",
     "HELP_REMOVE", "HELP_SETUP", "HELP_MINIMAP", "HELP_LANG", "HELP_VERSION",
-    "HELP_HELP",
+    "HELP_TEST", "HELP_HELP",
   }
   for _, key in ipairs(keys) do
     Print(Text(key))
@@ -99,6 +99,13 @@ local function HandleSlash(input)
       Print(string.format(Text("MSG_NEED_NAME"), command))
     else
       ns.Editor.Remove(rest)
+    end
+  elseif command == "test" then
+    local verdict = string.lower(rest)
+    if Const.VerdictRank[verdict] then
+      ns.Chat.Preview(verdict)
+    else
+      Print(Text("MSG_TEST_USAGE"))
     end
   elseif command == "setup" then
     Print(string.format(Text("MSG_NOT_AVAILABLE"), Text("CMD_SETUP")))

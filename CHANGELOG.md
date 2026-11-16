@@ -4,6 +4,10 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-16
+### Added
+- `/bb test <ignore|warn|notice>` shows a sample chat line with that verdict's icon, so the markers can be checked without a flagged player speaking.
+
 ## [0.5.0] - 2026-11-16
 ### Added
 - Chat from players you warned about, or that only an imported list flags, now shows an icon in front of each line. If you turn chat hiding off, ignored players' lines carry a red cross.

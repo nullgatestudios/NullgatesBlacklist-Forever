@@ -1,0 +1,737 @@
+-- Blackbook: stubbed-client smoke test (optional, complementary to run.lua).
+--
+-- Run from the repository root:
+--     lua tests/smoke.lua
+--
+-- Loads every file listed in the TOC with stubbed WoW globals, fires
+-- ADDON_LOADED and drives the slash commands, so a wrong SlashCmdList key, a
+-- stale frame name or a SavedVariables mismatch fails here instead of in game.
+-- Nothing here is name-specific: the addon name, TOC name, frame names and
+-- slash commands all come from the files under test.
+
+-- The addon folder name is the one fixed fact here; the TOC, frame names and
+-- slash commands all come from the files under test. Run from the repository
+-- root: lua tests/smoke.lua
+local folder = "Blackbook"
+local source = debug.getinfo(1, "S").source or ""
+local script = source:match("^@(.*)$") or "tests/smoke.lua"
+local bs = string.char(92) -- a backslash, for Windows paths
+local dirPattern = "^(.*)[/" .. bs .. "][^/" .. bs .. "]*$"
+local scriptDir = script:match(dirPattern) or "."
+local repoRoot = scriptDir:match(dirPattern) or "."
+local root = repoRoot .. "/" .. folder
+local tocPath = root .. "/" .. folder .. ".toc"
+
+-- --- WoW stubs ---------------------------------------------------------------
+
+local frames = {}
+local printed = {}
+
+-- Unknown methods named like a client call (SetX, GetX, Enable...) do nothing, so
+-- the stub does not need every widget method spelled out. Fields stay nil.
+local NOOP_VERBS = { Set = true, Get = true, Is = true, Enable = true, Disable = true,
+  Start = true, Stop = true, Register = true, Clear = true, Show = true, Hide = true }
+local NoopMethods = {
+  __index = function(_, key)
+    local verb = type(key) == "string" and key:match("^%u%l+")
+    if verb and NOOP_VERBS[verb] then return function(self) return self end end
+  end,
+}
+
+local function Widget(kind, name)
+  local w = { kind = kind, name = name, children = {}, _scripts = {}, shown = false }
+  local function me() return w end
+  for _, method in ipairs({
+    "SetSize", "SetPoint", "SetAutoFocus", "SetMaxLetters", "SetMultiLine",
+    "SetTextInsets", "SetClampedToScreen", "ClearFocus",
+    "SetFrameStrata", "SetMovable", "SetFrameLevel",
+  }) do
+    w[method] = me
+  end
+  w.SetText = function(this, text) this.text = text return this end
+  w.GetText = function(this) return this.text or "" end
+  w.SetScript = function(this, scriptName, fn) this._scripts[scriptName] = fn return this end
+  w.Show = function(this) this.shown = true return this end
+  w.Hide = function(this) this.shown = false return this end
+  w.IsShown = function(this) return this.shown end
+  w.SetChecked = function(this, value) this.checked = value and true or false return this end
+  w.GetChecked = function(this) return this.checked end
+  w.CreateFontString = function() return Widget("FontString") end
+  w.SetSize = function(this, width, height) this.w, this.h = width, height return this end
+  w.SetPoint = function(this, point, relative, relPoint, x, y)
+    this.points = this.points or {}
+    this.points[#this.points + 1] = { point = point, relative = relative, relPoint = relPoint, x = x, y = y }
+    return this
+  end
+  w.SetDataProvider = function(this, provider, retain) this.provider, this.retain = provider, retain return this end
+  w.RegisterEvent = function(this, event)
+    this.events = this.events or {}
+    this.events[event] = true
+    return this
+  end
+  w.SetTexture = function(this, texture) this.texture = texture return this end
+  w.GetWidth = function(this) return this.w or 0 end
+  w.GetFrameLevel = function() return 1 end
+  w.SetEnabled = function(this, value) this.enabled = value and true or false return this end
+  w.CreateTexture = function() return Widget("Texture") end
+  w.TitleContainer = { TitleText = { SetText = function(this, text) this.text = text end } }
+  return setmetatable(w, NoopMethods)
+end
+
+function CreateFrame(kind, name, parent, template)
+  local widget = Widget(kind, name)
+  widget.template = template
+  if name then
+    _G[name] = widget
+    _G[name .. "TitleText"] = widget.TitleContainer.TitleText
+  end
+  if parent and parent.children then parent.children[#parent.children + 1] = widget end
+  frames[#frames + 1] = widget
+  return widget
+end
+
+local lastView
+function CreateScrollBoxListLinearView()
+  lastView = {
+    SetElementExtent = function() end,
+    SetElementInitializer = function(self, template, fn) self.template, self.initializer = template, fn end,
+  }
+  return lastView
+end
+function CreateDataProvider(array) return { data = array } end
+ScrollUtil = { InitScrollBoxListWithScrollBar = function() end }
+ScrollBoxConstants = { RetainScrollPosition = "retain" }
+
+local menuHooks = {}
+Menu = { ModifyMenu = function(tag, fn) menuHooks[tag] = fn end }
+
+local chatFilters = {}
+function ChatFrame_AddMessageEventFilter(event, fn) chatFilters[event] = fn end
+
+UIParent = Widget("Frame", "UIParent")
+TargetFrame = Widget("Frame", "TargetFrame")
+TargetFrame.TargetFrameContainer = { Portrait = Widget("Texture") }
+local smokeTarget
+UnitExists = function(unit) return unit == "target" and smokeTarget ~= nil end
+UnitIsPlayer = function() return true end
+local tooltipCallback
+TooltipDataProcessor = { AddTooltipPostCall = function(_, fn) tooltipCallback = fn end }
+Enum = { TooltipDataType = { Unit = "unit" } }
+GameTooltip = {
+  lines = {},
+  GetUnit = function() return "Mark Warn", "mouseover" end,
+  AddLine = function(self, text) self.lines[#self.lines + 1] = text end,
+  Show = function() end,
+}
+Minimap = Widget("Frame", "Minimap")
+Minimap.GetWidth = function() return 140 end
+Minimap.GetCenter = function() return 500, 400 end
+Minimap.GetEffectiveScale = function() return 1 end
+Minimap.ClearAllPoints = function(this) this.points = nil return this end
+DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) printed[#printed + 1] = text end }
+SlashCmdList = {}
+UISpecialFrames = {}
+tinsert = table.insert
+GetLocale = function() return "deDE" end
+UnitName = function(unit)
+  if unit == "player" then return "Self", "Char" end
+  if (unit == "target" or unit == "mouseover") and smokeTarget then return smokeTarget[1], smokeTarget[2] end
+  return nil
+end
+function strtrim(text) return (text:gsub("^%s+", ""):gsub("%s+$", "")) end
+function time() return 1700000000 end
+
+-- --- Load the addon exactly as the client does --------------------------------
+
+local function ReadToc()
+  local handle = assert(io.open(tocPath, "rb"), "cannot open " .. tocPath)
+  local text = handle:read("*a")
+  handle:close()
+  local files = {}
+  for line in text:gmatch("[^\r\n]+") do
+    local trimmed = line:gsub("^%s+", ""):gsub("%s+$", "")
+    if trimmed ~= "" and trimmed:sub(1, 2) ~= "##" and trimmed:lower():match("%.lua$") then
+      files[#files + 1] = trimmed
+    end
+  end
+  return files, text:match("##%s*SavedVariables:%s*([%w_]+)")
+end
+
+local tocFiles, savedVariable = ReadToc()
+local ns = {}
+for _, relative in ipairs(tocFiles) do
+  local chunk = assert(loadfile(root .. "/" .. relative), "cannot load " .. relative)
+  chunk(folder, ns)
+end
+
+local Const = ns.Const
+
+-- --- Assertions --------------------------------------------------------------
+
+local checks, failures = 0, 0
+
+local function Check(ok, label)
+  checks = checks + 1
+  if ok then return end
+  failures = failures + 1
+  print("FAIL " .. label)
+end
+
+local function Equals(actual, expected, label)
+  Check(actual == expected,
+    label .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
+end
+
+local function Contains(text, needle, label)
+  Check(type(text) == "string" and text:find(needle, 1, true) ~= nil,
+    label .. ": " .. tostring(text) .. " lacks " .. tostring(needle))
+end
+
+local function LastPrinted()
+  return printed[#printed] or ""
+end
+
+-- --- TOC, slash registration and bootstrap ------------------------------------
+
+Equals(folder, Const.ADDON_NAME, "folder name equals Const.ADDON_NAME")
+Equals(savedVariable, Const.SAVED_VARIABLE, "TOC SavedVariables equals Const.SAVED_VARIABLE")
+
+local slashKey, slashHandler
+for key, handler in pairs(SlashCmdList) do
+  slashKey, slashHandler = key, handler
+end
+Check(slashHandler ~= nil, "a slash command is registered")
+Equals(slashKey, string.upper(Const.ADDON_NAME), "SlashCmdList key is the upper-cased addon name")
+Equals(_G["SLASH_" .. tostring(slashKey) .. "1"], Const.SLASH_BLACKBOOK, "SLASH_<key>1 equals the long command")
+Equals(_G["SLASH_" .. tostring(slashKey) .. "2"], Const.SLASH_BLACKBOOK_SHORT, "SLASH_<key>2 equals the short command")
+
+local function Run(input)
+  printed = {}
+  slashHandler(input)
+  return printed
+end
+
+local loader
+for _, frame in ipairs(frames) do
+  if frame._scripts.OnEvent then
+    loader = frame
+    break
+  end
+end
+Check(loader ~= nil, "the loader frame registered OnEvent")
+
+local function Fire(name)
+  printed = {}
+  loader._scripts.OnEvent(loader, "ADDON_LOADED", name)
+end
+
+Fire("SomeOtherAddon")
+Equals(#printed, 0, "ADDON_LOADED for another addon is ignored")
+
+Fire(folder)
+Equals(#printed, 1, "one message after loading")
+Contains(printed[1], Const.ADDON_NAME, "load message names the addon")
+Contains(printed[1], ns.L.MSG_LOADED, "load message uses the locale string")
+Check(ns.L == ns.L_DE, "a deDE client selects the German table")
+
+local db = _G[savedVariable]
+Check(type(db) == "table", "the saved variable exists after loading")
+Equals(db and db.version, 1, "fresh database is at version 1")
+Equals(ns.Settings.Init(), db, "Settings reads the TOC saved variable")
+Equals(db and db.settings.language, "auto", "language starts as auto")
+
+-- Enforcement is wired at load: one chat filter per event, one request frame.
+Check(chatFilters.CHAT_MSG_SAY ~= nil and chatFilters.CHAT_MSG_WHISPER ~= nil
+  and chatFilters.CHAT_MSG_OFFICER ~= nil, "chat filters are registered")
+Check(chatFilters.CHAT_MSG_SAY == chatFilters.CHAT_MSG_GUILD, "one shared chat filter")
+local requestFrame
+for _, frame in ipairs(frames) do
+  if frame.events and frame.events.PARTY_INVITE_REQUEST then requestFrame = frame end
+end
+Check(requestFrame ~= nil, "the request frame is created")
+
+-- Hidden chat and declined requests run end to end through the loaded addon.
+ns.Records.Save("Smoke Target", "ignore", { spam = true }, "smoke")
+Equals(chatFilters.CHAT_MSG_SAY(nil, "CHAT_MSG_SAY", "hi", "Smoke Target"), true, "ignored chat is hidden")
+Equals(chatFilters.CHAT_MSG_SAY(nil, "CHAT_MSG_SAY", "hi", "Someone Else"), false, "other chat is shown")
+local declined
+function DeclineGroup() declined = true end
+printed = {}
+requestFrame._scripts.OnEvent(requestFrame, "PARTY_INVITE_REQUEST", "Smoke Target")
+Equals(declined, true, "a party invite from an ignored player is declined")
+DeclineGroup = nil
+ns.Records.Remove("Smoke Target")
+
+local newer = { version = 99, settings = { language = "de" } }
+_G[savedVariable] = newer
+Fire(folder)
+Contains(printed[1], ns.L.MSG_DB_NEWER, "newer data is reported")
+Equals(_G[savedVariable].version, 99, "newer data is left alone")
+
+_G[savedVariable] = nil
+ns.Settings.Init()
+
+-- --- Slash commands -----------------------------------------------------------
+
+local out = Run("help")
+Equals(#out, 12, "help prints twelve lines")
+Contains(out[1], ns.L.HELP_HEADER, "help header")
+Contains(out[2], Const.SLASH_BLACKBOOK_SHORT, "help lines use the short command")
+
+local tocVersion
+do
+  local handle = assert(io.open(tocPath, "rb"))
+  tocVersion = handle:read("*a"):match("##%s*Version:%s*([%d%.]+)")
+  handle:close()
+end
+GetAddOnMetadata = function(name, field)
+  if name == folder and field == "Version" then return tocVersion end
+end
+Run("version")
+Contains(LastPrinted(), string.format(ns.L.MSG_VERSION, tocVersion), "version command prints the TOC version")
+GetAddOnMetadata = nil
+Run("version")
+Contains(LastPrinted(), string.format(ns.L.MSG_VERSION, "?"), "version command copes with missing metadata API")
+
+Run("")
+Check(_G.BlackbookManager ~= nil and _G.BlackbookManager:IsShown(), "the bare command opens the window")
+Run("")
+Check(not _G.BlackbookManager:IsShown(), "the bare command closes it again")
+
+Run("list")
+Contains(LastPrinted(), ns.L.MSG_LIST_EMPTY, "empty list message")
+
+Run("ignore")
+Contains(LastPrinted(), string.format(ns.L.MSG_NEED_NAME, "ignore"), "ignore without a name")
+
+Run("remove")
+Contains(LastPrinted(), string.format(ns.L.MSG_NEED_NAME, "remove"), "remove without a name")
+
+Run("bogus")
+Contains(LastPrinted(), string.format(ns.L.MSG_UNKNOWN_COMMAND, "bogus"), "unknown command")
+
+Run("lang xx")
+Contains(LastPrinted(), ns.L.MSG_LANG_INVALID, "invalid language rejected")
+Run("lang en")
+Equals(ns.Settings.Get("language"), "en", "language stored")
+Contains(LastPrinted(), string.format(ns.L.MSG_LANG_SET, "en"), "language confirmation")
+Run("lang auto")
+Equals(ns.Settings.Get("language"), "auto", "language reset to auto")
+
+Run("ignore Self Char")
+Contains(LastPrinted(), ns.L.MSG_SELF, "own character is refused")
+
+Run("setup")
+Contains(LastPrinted(), string.format(ns.L.MSG_NOT_AVAILABLE, ns.L.CMD_SETUP), "setup is not available yet")
+
+-- Minimap button: created at load, toggled by /bb minimap, position persists.
+local minimapButton = _G.BlackbookMinimapButton
+Check(minimapButton ~= nil and minimapButton.shown, "the minimap button is shown by default")
+Run("minimap")
+Contains(LastPrinted(), ns.L.MSG_MINIMAP_HIDDEN, "minimap command reports hiding")
+Check(not minimapButton.shown and ns.Settings.Get("showMinimap") == false, "the button is hidden and the setting saved")
+Run("minimap")
+Contains(LastPrinted(), ns.L.MSG_MINIMAP_SHOWN, "minimap command reports showing")
+Check(minimapButton.shown and ns.Settings.Get("showMinimap") == true, "the button is shown again")
+local dragStart, dragStop = minimapButton._scripts.OnDragStart, minimapButton._scripts.OnDragStop
+Check(minimapButton._scripts.OnUpdate == nil, "no per-frame work before a drag")
+dragStart(minimapButton)
+Check(minimapButton._scripts.OnUpdate ~= nil, "dragging installs the follow script")
+GetCursorPosition = function() return 500, 500 end
+minimapButton._scripts.OnUpdate(minimapButton)
+Equals(ns.Settings.Get("minimapAngle"), 90, "the angle follows the cursor (straight up is 90)")
+GetCursorPosition = function() return 400, 300 end
+minimapButton._scripts.OnUpdate(minimapButton)
+Equals(ns.Settings.Get("minimapAngle"), 225, "the angle follows the cursor (down-left is 225)")
+dragStop(minimapButton)
+Check(minimapButton._scripts.OnUpdate == nil, "the follow script is removed when the drag ends")
+Equals(_G[savedVariable].settings.minimapAngle, 225, "the angle is in the saved variable")
+
+-- --- Editor -----------------------------------------------------------------------
+
+local function Find(frame, predicate, results)
+  results = results or {}
+  for _, child in ipairs(frame.children) do
+    if predicate(child) then results[#results + 1] = child end
+    Find(child, predicate, results)
+  end
+  return results
+end
+
+local function Parts(editorFrame)
+  local parts = {}
+  parts.nameBox = Find(editorFrame, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)[1]
+  parts.comment = Find(editorFrame, function(f) return f.kind == "EditBox" and f.template == nil end)[1]
+  parts.save = Find(editorFrame, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_SAVE end)[1]
+  parts.cancel = Find(editorFrame, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1]
+  local checks = Find(editorFrame, function(f) return f.kind == "CheckButton" end)
+  parts.radios, parts.labels = {}, {}
+  for _, check in ipairs(checks) do
+    if check.text == ns.L.VERDICT_IGNORE then parts.radios.ignore = check
+    elseif check.text == ns.L.VERDICT_WARN then parts.radios.warn = check
+    else parts.labels[#parts.labels + 1] = check end
+  end
+  return parts
+end
+
+local function Click(widget)
+  widget._scripts.OnClick(widget)
+end
+
+local function Type(box, text)
+  box:SetText(text)
+  box._scripts.OnTextChanged(box)
+end
+
+out = Run("warn Alpha Beta")
+Equals(#out, 0, "opening the editor prints nothing")
+local editor = _G.BlackbookEditor
+Check(editor ~= nil and editor:IsShown(), "the editor is shown")
+local function InList(list, value)
+  for _, entry in ipairs(list) do if entry == value then return true end end
+  return false
+end
+Check(InList(UISpecialFrames, "BlackbookEditor"), "the editor is listed in UISpecialFrames")
+Check(InList(UISpecialFrames, "BlackbookManager"), "the window is listed in UISpecialFrames")
+
+local p = Parts(editor)
+Check(p.nameBox and p.comment and p.save and p.cancel, "name box, comment box and both buttons exist")
+Equals(#p.labels, #Const.Labels, "one checkbox per label in the fallback grid")
+Check(p.radios.ignore and p.radios.warn, "both verdict radios exist")
+Equals(p.nameBox.text, "Alpha Beta", "name box is prefilled")
+Equals(p.radios.warn.checked, true, "the requested verdict is selected")
+Equals(p.radios.ignore.checked, false, "the other verdict is not selected")
+Equals(p.save.enabled, false, "Save is disabled without labels and comment")
+
+-- Layout: the comment area (with its hint line) must end above the buttons.
+-- The buttons sit 14 px above the bottom edge and are 22 px high.
+do
+  local area = p.comment and Find(editor, function(f) return f.edit == p.comment end)[1]
+  local top = area and area.points and area.points[1]
+  Check(top ~= nil and top.relative == editor and top.point == "TOPLEFT", "the comment area is anchored to the top of the editor")
+  if top and editor.h then
+    local areaBottom = -top.y + area.h
+    Check(areaBottom + 16 <= editor.h - 14 - 22,
+      "the comment area and its hint end above the buttons (area bottom " .. areaBottom .. ", frame " .. editor.h .. ")")
+  else
+    Check(false, "the editor frame has a recorded height")
+  end
+end
+
+printed = {}
+Check(not ns.Editor.Commit(), "a forced commit without labels is refused")
+Contains(LastPrinted(), ns.L.ERR_LABELS, "the missing label is reported")
+Check(editor:IsShown(), "the editor stays open after a refused save")
+Equals(#ns.Records.All(), 0, "nothing was saved")
+
+p.labels[1]:SetChecked(true)
+Click(p.labels[1])
+Equals(p.save.enabled, false, "a label alone does not enable Save")
+Type(p.comment, "Pulled the boss on purpose")
+Equals(p.save.enabled, true, "label and comment enable Save")
+Type(p.comment, "   ")
+Equals(p.save.enabled, false, "a blank comment disables Save again")
+Type(p.comment, string.rep("x", 256))
+Equals(p.save.enabled, false, "a 256 character comment disables Save")
+Type(p.comment, "Pulled the boss on purpose")
+Equals(p.save.enabled, true, "Save is enabled again")
+
+Click(p.radios.ignore)
+Equals(p.radios.warn.checked, false, "choosing one verdict clears the other")
+Click(p.radios.warn)
+
+printed = {}
+Click(p.save)
+local record = ns.Records.Get("alpha beta")
+Check(record ~= nil, "the record was saved")
+Equals(record and record.verdict, "warn", "verdict stored")
+Equals(record and record.labels.harassment, true, "the clicked label stored")
+Equals(record and record.comment, "Pulled the boss on purpose", "comment stored")
+Check(not editor:IsShown(), "the editor closes after saving")
+Contains(LastPrinted(), "Alpha Beta", "save message names the player")
+Contains(LastPrinted(), ns.L.VERDICT_WARN, "save message shows the verdict")
+
+ns.Records.Save("Pipe | Name", "ignore", { scam = true }, "Piped text")
+
+out = Run("list")
+Equals(#out, 3, "header plus two rows")
+Contains(out[2], "Alpha Beta", "first row shows the name")
+Contains(out[2], ns.L.VERDICT_WARN, "first row shows the verdict")
+Contains(out[2], ns.L.LABEL_HARASSMENT, "first row shows the label")
+Contains(out[3], "Pipe || Name", "pipes are escaped for chat output")
+
+Run("remove alpha beta")
+Contains(LastPrinted(), string.format(ns.L.MSG_RECORD_REMOVED, "Alpha Beta"), "remove message uses the stored name")
+Run("remove alpha beta")
+Contains(LastPrinted(), string.format(ns.L.MSG_RECORD_NOT_FOUND, "alpha beta"), "second remove echoes the typed name")
+Run("remove Pipe | Name")
+Equals(#ns.Records.All(), 0, "all records removed")
+
+-- --- Editor: existing records, renames, name clashes --------------------------------
+
+ns.Records.Save("Alpha Beta", "warn", { harassment = true }, "Pulled the boss on purpose")
+Run("ignore Alpha Beta")
+p = Parts(_G.BlackbookEditor)
+Equals(p.nameBox.text, "Alpha Beta", "an existing record is loaded")
+Equals(p.radios.warn.checked, true, "the stored verdict wins over the command")
+Equals(p.comment.text, "Pulled the boss on purpose", "the stored comment is loaded")
+Equals(p.labels[1].checked, true, "the stored label is checked")
+Equals(p.save.enabled, true, "an existing valid record can be saved at once")
+
+Type(p.nameBox, "Gamma Delta")
+Click(p.save)
+Equals(ns.Records.Get("alpha beta"), nil, "renaming moves the record")
+Check(ns.Records.Get("gamma delta") ~= nil, "the renamed record exists")
+
+ns.Records.Save("Epsilon Zeta", "ignore", { spam = true }, "Other record")
+Run("ignore Gamma Delta")
+p = Parts(_G.BlackbookEditor)
+Type(p.nameBox, "Epsilon Zeta")
+printed = {}
+Click(p.save)
+Contains(LastPrinted(), string.format(ns.L.MSG_NAME_TAKEN, "Epsilon Zeta"), "renaming onto another record is refused")
+Equals(ns.Records.Get("epsilon zeta").comment, "Other record", "the other record is untouched")
+Check(ns.Records.Get("gamma delta") ~= nil, "the renamed record stays where it was")
+
+Run("ignore Fresh Person")
+p = Parts(_G.BlackbookEditor)
+Equals(p.comment.text, "", "a new record starts with an empty comment")
+Equals(p.labels[1].checked, false, "a new record starts without labels")
+Type(p.nameBox, "Epsilon Zeta")
+p.labels[2]:SetChecked(true)
+Click(p.labels[2])
+Type(p.comment, "overwrite attempt")
+printed = {}
+Click(p.save)
+Contains(LastPrinted(), string.format(ns.L.MSG_NAME_TAKEN, "Epsilon Zeta"), "a new record cannot overwrite an existing one")
+Equals(ns.Records.Get("epsilon zeta").comment, "Other record", "nothing was overwritten")
+
+Click(p.cancel)
+Check(not _G.BlackbookEditor:IsShown(), "Cancel closes the editor")
+ns.Records.Remove("gamma delta")
+ns.Records.Remove("epsilon zeta")
+Equals(#ns.Records.All(), 0, "editor tests left no records behind")
+
+-- --- Window: list tab ---------------------------------------------------------------
+
+ns.Records.Save("Row One", "ignore", { scam = true }, "first comment")
+ns.Records.Save("Row Two", "warn", { spam = true }, "second comment")
+Run("")
+local manager = _G.BlackbookManager
+Check(manager:IsShown(), "the window opens")
+
+local function Box() return Find(manager, function(f) return f.provider ~= nil end)[1] end
+local function Names()
+  local names = {}
+  for _, record in ipairs(Box().provider.data) do names[#names + 1] = record.name end
+  return table.concat(names, ",")
+end
+local function ButtonByText(text)
+  return Find(manager, function(f)
+    return f.kind == "Button" and f.text and f.text:sub(1, #text) == text
+  end)[1]
+end
+
+Equals(Names(), "Row One,Row Two", "both records are listed, sorted by name")
+Equals(Box().retain, "retain", "refreshing keeps the scroll position")
+Equals(lastView.template, "Button", "rows are buttons")
+
+-- rows are recycled widgets filled by the initializer
+local row = CreateFrame("Button", nil, Box())
+lastView.initializer(row, Box().provider.data[1])
+Equals(row.cells.name.text, "Row One", "the row shows the name")
+Equals(row.cells.verdict.text, ns.L.VERDICT_IGNORE, "the row shows the verdict")
+Equals(row.cells.labels.text, ns.L.LABEL_SCAM, "the row shows the labels")
+Equals(row.cells.comment.text, "first comment", "the row shows the comment")
+Check(row.cells.date.text:match("^%d%d%d%d%-%d%d%-%d%d$") ~= nil, "the row shows a date")
+lastView.initializer(row, Box().provider.data[2])
+Equals(row.cells.name.text, "Row Two", "a recycled row shows its new record")
+
+-- search
+local inputs = Find(manager, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)
+local searchBox = inputs[1]
+Type(searchBox, "two")
+Equals(Names(), "Row Two", "search narrows the list")
+Type(searchBox, "FIRST COMMENT")
+Equals(Names(), "Row One", "search matches the comment, ignoring case")
+Type(searchBox, "zzz")
+Equals(Names(), "", "search with no match empties the list")
+Type(searchBox, "")
+Equals(Names(), "Row One,Row Two", "clearing the search restores the list")
+
+-- verdict filter
+local warnRadio = Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.L.VERDICT_WARN end)[1]
+Click(warnRadio)
+Equals(Names(), "Row Two", "the verdict filter shows only warnings")
+local allRadio = Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.L.FILTER_ALL end)[1]
+Click(allRadio)
+Equals(Names(), "Row One,Row Two", "All shows everything again")
+
+-- label filter (checkbox grid in this stub client)
+local spamCheck = Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.L.LABEL_SPAM end)[1]
+spamCheck:SetChecked(true)
+Click(spamCheck)
+Equals(Names(), "Row Two", "the label filter keeps matching records")
+spamCheck:SetChecked(false)
+Click(spamCheck)
+Equals(Names(), "Row One,Row Two", "clearing the label filter shows all")
+
+-- sorting
+local nameHeader = ButtonByText(ns.L.COL_NAME)
+Check(nameHeader.text:find("^", 1, true) ~= nil, "the sorted column shows an arrow")
+Click(nameHeader)
+Equals(Names(), "Row Two,Row One", "clicking the sorted column reverses it")
+Click(nameHeader)
+Equals(Names(), "Row One,Row Two", "clicking again restores it")
+Click(ButtonByText(ns.L.COL_VERDICT))
+Equals(Names(), "Row Two,Row One", "sort by verdict puts warnings before ignores")
+Click(nameHeader)
+Equals(Names(), "Row One,Row Two", "a new column starts ascending")
+
+-- clicking a row: edit, shift-click: delete
+IsShiftKeyDown = function() return false end
+Click(row)
+Check(_G.BlackbookEditor:IsShown(), "clicking a row opens the editor")
+Equals(Find(_G.BlackbookEditor, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)[1].text,
+  "Row Two", "the editor shows that record")
+Click(Find(_G.BlackbookEditor, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1])
+IsShiftKeyDown = function() return true end
+printed = {}
+Click(row)
+Equals(ns.Records.Get("row two"), nil, "shift-click deletes the record")
+Contains(LastPrinted(), "Row Two", "the deletion is announced")
+Equals(Names(), "Row One", "the list updates after a deletion")
+IsShiftKeyDown = nil
+ns.Records.Remove("row one")
+Equals(Names(), "", "the list is empty when no records remain")
+
+-- add player box
+local addBox = inputs[2]
+local addButton = ButtonByText(ns.L.LIST_ADD)
+addBox:SetText("Typed Name")
+Click(addButton)
+Equals(Find(_G.BlackbookEditor, function(f) return f.kind == "EditBox" and f.template == "InputBoxTemplate" end)[1].text,
+  "Typed Name", "the add box opens the editor with the typed name")
+Equals(addBox.text, "", "the add box is cleared")
+Click(Find(_G.BlackbookEditor, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1])
+
+-- --- Window: settings tab -----------------------------------------------------------
+
+Click(ButtonByText(ns.L.TAB_SETTINGS))
+local hideCheck = Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.L.OPT_HIDE_CHAT end)[1]
+Check(hideCheck ~= nil, "the settings tab shows the hide chat option")
+Equals(hideCheck.checked, true, "the option reflects the saved value")
+hideCheck:SetChecked(false)
+Click(hideCheck)
+Equals(ns.Settings.Get("hideChat"), false, "unticking saves the setting at once")
+hideCheck:SetChecked(true)
+Click(hideCheck)
+Equals(ns.Settings.Get("hideChat"), true, "ticking saves it again")
+for _, key in ipairs({ "OPT_AUTO_DECLINE", "OPT_SHOW_NOTICES", "OPT_SHOW_MINIMAP" }) do
+  Check(Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.L[key] end)[1] ~= nil, key .. " is offered")
+end
+local englishRadio = Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.L.LANG_EN end)[1]
+printed = {}
+Click(englishRadio)
+Equals(ns.Settings.Get("language"), "en", "choosing a language saves it")
+Contains(LastPrinted(), "en", "the language change is confirmed")
+Click(Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.L.LANG_AUTO end)[1])
+Equals(ns.Settings.Get("language"), "auto", "language back to automatic")
+Click(ButtonByText(ns.L.TAB_LIST))
+Check(Box() ~= nil, "switching back to the list tab works")
+Run("")
+Check(not manager:IsShown(), "the window closes")
+
+-- --- Display: icon, chat markers, portrait, tooltip -----------------------------------------
+
+do
+  local handle = assert(io.open(tocPath, "rb"))
+  local tocText = handle:read("*a")
+  handle:close()
+  Equals(tocText:match("##%s*IconTexture:%s*(%S+)"), Const.ICON, "the TOC icon is the icon the addon uses")
+  Check(tocText:find("Display/Markers.lua", 1, true) < tocText:find("Enforce/Chat.lua", 1, true),
+    "Markers loads before the chat filter that uses it")
+end
+local iconFile = io.open(root .. "/icon.tga", "rb")
+Check(iconFile ~= nil, "the icon file ships in the addon folder")
+if iconFile then
+  local header = iconFile:read(18)
+  iconFile:close()
+  local width = header:byte(13) + header:byte(14) * 256
+  local height = header:byte(15) + header:byte(16) * 256
+  Equals(header:byte(3), 2, "the icon is an uncompressed true-colour TGA")
+  Equals(header:byte(17), 32, "the icon has 32 bits per pixel (alpha)")
+  local function PowerOfTwo(n)
+    local p = 1
+    while p < n do p = p * 2 end
+    return n > 0 and p == n
+  end
+  Check(PowerOfTwo(width), "the icon width is a power of two (" .. width .. ")")
+  Check(PowerOfTwo(height), "the icon height is a power of two (" .. height .. ")")
+end
+
+ns.Records.Save("Mark Warn", "warn", { spam = true }, "marked in chat")
+local hide, marked = chatFilters.CHAT_MSG_SAY(nil, "CHAT_MSG_SAY", "yo", "Mark Warn")
+Equals(hide, false, "a warned player's chat is shown")
+Check(type(marked) == "string" and marked:find("UI-Dialog-Icon-AlertNew", 1, true) ~= nil
+  and marked:sub(-2) == "yo", "the warning icon is in front of the text")
+
+smokeTarget = { "Mark", "Warn" }
+local targetFrame
+for _, frame in ipairs(frames) do
+  if frame.events and frame.events.PLAYER_TARGET_CHANGED then targetFrame = frame end
+end
+Check(targetFrame ~= nil, "the target change event is registered")
+targetFrame._scripts.OnEvent(targetFrame, "PLAYER_TARGET_CHANGED")
+local mark = _G.BlackbookTargetMark
+Check(mark ~= nil and mark.shown, "the portrait mark is shown for a warned target")
+Check(mark.icon.shown and not mark.strike.shown, "a warned target gets the corner icon")
+Check(mark.icon.texture and mark.icon.texture:find("AlertNew", 1, true), "with the warning texture")
+ns.Records.Save("Mark Warn", "ignore", { spam = true }, "now ignored")
+Check(mark.strike.shown and not mark.icon.shown, "changing the record redraws the mark (strike for ignore)")
+smokeTarget = nil
+targetFrame._scripts.OnEvent(targetFrame, "PLAYER_TARGET_CHANGED")
+Check(not mark.shown, "no target hides the mark")
+
+Check(tooltipCallback ~= nil, "the unit tooltip hook is installed")
+smokeTarget = { "Mark", "Warn" }
+GameTooltip.lines = {}
+tooltipCallback(GameTooltip)
+Check(#GameTooltip.lines >= 3, "the tooltip gets the verdict, labels and comment")
+Contains(GameTooltip.lines[1], "Blackbook: ", "the first tooltip line names the addon")
+Contains(GameTooltip.lines[3], "now ignored", "the comment is shown")
+ns.Records.Remove("mark warn")
+smokeTarget = nil
+
+-- /bb test shows a sample chat line so the icons can be checked in game.
+local warnLine = Run("test warn")
+Equals(#warnLine, 1, "/bb test warn prints one sample line")
+Contains(warnLine[1], "UI-Dialog-Icon-AlertNew", "the warn sample carries the warning icon")
+Contains(warnLine[1], ns.L.MSG_TEST_SAMPLE, "the warn sample has the sample text")
+Contains(Run("test notice")[1], "Arrow-Down-Up", "the notice sample carries the notice icon")
+ns.Settings.Set("hideChat", true)
+Contains(Run("test ignore")[1], ns.L.MSG_TEST_HIDDEN, "ignore sample explains hidden chat when hiding is on")
+ns.Settings.Set("hideChat", false)
+Contains(Run("test ignore")[1], "|cffe61a1a", "ignore sample shows the red cross when hiding is off")
+ns.Settings.Set("hideChat", true)
+Contains(Run("test")[1], ns.L.MSG_TEST_USAGE, "/bb test without a verdict shows the usage")
+Contains(Run("test bogus")[1], ns.L.MSG_TEST_USAGE, "/bb test with an unknown verdict shows the usage")
+
+-- Context menu: the player menus are hooked, and a hook adds the entries.
+Check(menuHooks.MENU_UNIT_PLAYER ~= nil and menuHooks.MENU_UNIT_TARGET ~= nil, "player menus are hooked")
+local entries = {}
+local root = {
+  CreateDivider = function() entries[#entries + 1] = "-" end,
+  CreateTitle = function(_, text) entries[#entries + 1] = text end,
+  CreateButton = function(_, text) entries[#entries + 1] = text end,
+}
+menuHooks.MENU_UNIT_TARGET(nil, root, { name = "Menu Target-Realm" })
+Equals(entries[2], ns.L.CTX_TITLE, "the menu hook adds the Blackbook title")
+Equals(entries[3], ns.L.CTX_IGNORE, "the menu hook offers Ignore for a new player")
+
+-- --- Summary -------------------------------------------------------------------
+
+io.write(string.format("smoke: %d checks, %d failure(s)\n", checks, failures))
+io.stdout:flush()
+if failures > 0 then os.exit(1) end
+os.exit(0)

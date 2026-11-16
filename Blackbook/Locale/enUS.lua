@@ -27,7 +27,11 @@ L.HELP_SETUP = "/bb setup - show the setup wizard again"
 L.HELP_MINIMAP = "/bb minimap - show or hide the minimap button"
 L.HELP_LANG = "/bb lang de|en|auto - set the language, then /reload"
 L.HELP_VERSION = "/bb version - show the installed version"
-L.HELP_HELP = "/bb help - show this text"
+L.HELP_TEST = "/bb test <ignore|warn|notice> - show a sample chat line with that verdict's icon"
+L.MSG_TEST_USAGE = "Use /bb test ignore, /bb test warn or /bb test notice."
+L.MSG_TEST_HIDDEN = "An ignored player's chat is hidden. Turn off \"hide chat\" in Settings to see its marker."
+L.MSG_TEST_SAMPLE = "Sample Player: this is a test message."
+L.HELP_HELP ="/bb help - show this text"
 L.MSG_VERSION = "Version %s."
 
 -- Results.
