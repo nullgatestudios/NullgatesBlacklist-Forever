@@ -96,7 +96,8 @@ function Settings.Init()
   local db = BlackbookDB
   local version = tonumber(db.version) or 0
   if version > CURRENT_VERSION then
-    ns.db = db
+    -- Written by a later build: keep ns.db unset so nothing can modify it.
+    ns.db = nil
     return db, "newer"
   end
   for target = version + 1, CURRENT_VERSION do

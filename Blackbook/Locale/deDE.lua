@@ -39,6 +39,15 @@ ns.L_DE = setmetatable({
   MSG_LANG_SET = "Sprache auf %s gesetzt. Tippe /reload, um sie anzuwenden.",
   MSG_LANG_INVALID = "Nutze /bb lang de, /bb lang en oder /bb lang auto.",
 
+  -- Enforcement (section 6.4).
+  MSG_WHISPER_HIDDEN = "Eine Flüsternachricht von %s wurde ausgeblendet.",
+  MSG_DECLINED = "%s von %s abgelehnt.",
+  MSG_NO_CHAT_FILTER = "Der Chatfilter ist in diesem Client nicht verfügbar, deshalb wird der Chat nicht ausgeblendet.",
+  REQ_PARTY = "Eine Gruppeneinladung",
+  REQ_GUILD = "Eine Gildeneinladung",
+  REQ_DUEL = "Ein Duell",
+  REQ_TRADE = "Ein Handel",
+
   -- Verdicts.
   VERDICT_IGNORE = "Ignorieren",
   VERDICT_WARN = "Warnen",

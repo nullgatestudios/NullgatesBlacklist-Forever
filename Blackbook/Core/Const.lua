@@ -90,6 +90,13 @@ function Const.MaskToLabels(mask)
   return set
 end
 
+-- Verdict strength (section 3): ignore > warn > notice.
+Const.VerdictRank = { ignore = 3, warn = 2, notice = 1 }
+
+-- A hidden whisper is announced at most once per person in this many seconds
+-- (section 6.4).
+Const.WhisperNoticeSeconds = 60
+
 -- Tier thresholds (section 8.3). A tier needs that many distinct reports
 -- within its window. Kept in one table so the numbers are easy to review.
 Const.Tiers = {

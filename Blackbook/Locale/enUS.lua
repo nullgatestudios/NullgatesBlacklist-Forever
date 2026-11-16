@@ -41,6 +41,15 @@ L.MSG_SELF = "You cannot add your own character."
 L.MSG_LANG_SET = "Language set to %s. Type /reload to apply it."
 L.MSG_LANG_INVALID = "Use /bb lang de, /bb lang en or /bb lang auto."
 
+-- Enforcement (section 6.4).
+L.MSG_WHISPER_HIDDEN = "Hid a whisper from %s."
+L.MSG_DECLINED = "Declined %s from %s."
+L.MSG_NO_CHAT_FILTER = "The chat filter is not available in this client, so chat is not hidden."
+L.REQ_PARTY = "a party invite"
+L.REQ_GUILD = "a guild invite"
+L.REQ_DUEL = "a duel"
+L.REQ_TRADE = "a trade"
+
 -- Verdicts.
 L.VERDICT_IGNORE = "Ignore"
 L.VERDICT_WARN = "Warn"

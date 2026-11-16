@@ -1,0 +1,75 @@
+-- Blackbook: one chat filter for every channel (section 6.4). Chat from a
+-- player whose verdict is "ignore" is hidden while hideChat is on. Markers for
+-- warn and notice join in M5.
+local _, ns = ...
+
+local Const = ns.Const
+local Safe = ns.Safe
+local Identity = ns.Identity
+local Settings = ns.Settings
+local Resolver = ns.Resolver
+local Output = ns.Output
+
+local Chat = {}
+ns.Chat = Chat
+
+local EVENTS = {
+  "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_EMOTE", "CHAT_MSG_TEXT_EMOTE",
+  "CHAT_MSG_CHANNEL", "CHAT_MSG_WHISPER",
+  "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER",
+  "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING",
+  "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER",
+  "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
+}
+
+local lastNotice = {} -- target key -> time of the last whisper notice
+
+local function Now()
+  if type(GetTime) == "function" then return GetTime() end
+  return time()
+end
+
+-- The game calls a filter once per chat window, so the notice needs its own
+-- throttle: at most one per person per Const.WhisperNoticeSeconds.
+local function NoticeWhisper(name)
+  if not Settings.Get("showNotices") then return end
+  local key = string.lower(name)
+  local now = Now()
+  local last = lastNotice[key]
+  if last and now - last < Const.WhisperNoticeSeconds then return end
+  lastNotice[key] = now
+  Output.Print(string.format(Output.Text("MSG_WHISPER_HIDDEN"), Output.Escape(name)))
+end
+
+-- Chat filter: returns true to hide the message, false to leave it alone.
+-- Secret authors or texts are never touched.
+function Chat.Filter(_, event, msg, author)
+  if not Settings.Get("hideChat") then return false end
+  if not Safe.Str(msg) then return false end
+  local name = Identity.Normalize(author)
+  if not name then return false end
+  if Resolver.Verdict(name) ~= "ignore" then return false end
+  if event == "CHAT_MSG_WHISPER" then NoticeWhisper(name) end
+  return true
+end
+
+local registered = false
+
+-- Installs the filter on every chat event. Returns false when the client has
+-- no filter API; the addon keeps running without chat hiding.
+function Chat.Register()
+  if registered then return true end
+  local add = ChatFrame_AddMessageEventFilter
+  if type(add) ~= "function" and ChatFrameUtil then add = ChatFrameUtil.AddMessageEventFilter end
+  if type(add) ~= "function" then
+    Output.Print(Output.Text("MSG_NO_CHAT_FILTER"))
+    return false
+  end
+  for _, event in ipairs(EVENTS) do
+    add(event, Chat.Filter)
+  end
+  registered = true
+  return true
+end
+
+Chat.Events = EVENTS

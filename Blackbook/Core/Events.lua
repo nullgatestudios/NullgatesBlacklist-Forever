@@ -19,11 +19,15 @@ function Events:On(name, fn)
   return fn
 end
 
--- Calls every handler registered for name with the given arguments.
+-- Calls every handler registered for name with the given arguments. A failing
+-- handler is reported and never stops the others or the caller.
 function Events:Fire(name, ...)
   local list = handlers[name]
   if not list then return end
   for index = 1, #list do
-    list[index](...)
+    local ok, err = pcall(list[index], ...)
+    if not ok and type(geterrorhandler) == "function" then
+      geterrorhandler()(err)
+    end
   end
 end

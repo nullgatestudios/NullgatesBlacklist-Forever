@@ -4,25 +4,7 @@ local addonName, ns = ...
 
 local Const = ns.Const
 
-local PREFIX = "|cff66ccff" .. Const.ADDON_NAME .. "|r: "
-
--- Locale strings are looked up at call time: the language is chosen once the
--- saved variable is available, which is after every file has loaded.
-local function Text(key)
-  local value = ns.L[key]
-  if value == nil then return key end
-  return value
-end
-
--- Player-provided text goes into chat, so a pipe must be escaped (section 10).
-local function Escape(value)
-  return (tostring(value):gsub("|", "||"))
-end
-
-local function Print(message)
-  local frame = DEFAULT_CHAT_FRAME
-  if frame then frame:AddMessage(PREFIX .. tostring(message)) end
-end
+local Text, Escape, Print = ns.Output.Text, ns.Output.Escape, ns.Output.Print
 
 local function VerdictText(verdict)
   return Text("VERDICT_" .. string.upper(tostring(verdict or "")))
@@ -336,6 +318,8 @@ loader:SetScript("OnEvent", function(_, event, name)
   if event ~= "ADDON_LOADED" or name ~= addonName then return end
   local _, state = ns.Settings.Init()
   ApplyLanguage()
+  ns.Chat.Register()
+  ns.Requests.Register()
   if state == "newer" then Print(Text("MSG_DB_NEWER")) end
   Print(Text("MSG_LOADED"))
 end)
