@@ -9,6 +9,7 @@ local Identity = ns.Identity
 local Settings = ns.Settings
 local Resolver = ns.Resolver
 local Output = ns.Output
+local Markers = ns.Markers
 
 local Chat = {}
 ns.Chat = Chat
@@ -41,16 +42,22 @@ local function NoticeWhisper(name)
   Output.Print(string.format(Output.Text("MSG_WHISPER_HIDDEN"), Output.Escape(name)))
 end
 
--- Chat filter: returns true to hide the message, false to leave it alone.
--- Secret authors or texts are never touched.
-function Chat.Filter(_, event, msg, author)
-  if not Settings.Get("hideChat") then return false end
-  if not Safe.Str(msg) then return false end
+-- Chat filter. Returns true to hide the message. Otherwise returns false, plus
+-- the message with the verdict icon in front when the author has a verdict
+-- (the game passes the remaining arguments on unchanged). Secret authors or
+-- texts are never touched.
+function Chat.Filter(_, event, msg, author, ...)
+  local text = Safe.Str(msg)
+  if not text then return false end
   local name = Identity.Normalize(author)
   if not name then return false end
-  if Resolver.Verdict(name) ~= "ignore" then return false end
-  if event == "CHAT_MSG_WHISPER" then NoticeWhisper(name) end
-  return true
+  local verdict = Resolver.Verdict(name)
+  if not verdict then return false end
+  if verdict == "ignore" and Settings.Get("hideChat") then
+    if event == "CHAT_MSG_WHISPER" then NoticeWhisper(name) end
+    return true
+  end
+  return false, Markers.Icon(verdict) .. " " .. text, author, ...
 end
 
 local registered = false

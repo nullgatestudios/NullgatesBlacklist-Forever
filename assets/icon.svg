@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256">
+  <!-- index tabs: ignore / warn / notice -->
+  <rect x="44" y="12" width="13" height="8" rx="2" fill="#c4252f"/>
+  <rect x="44" y="24" width="13" height="8" rx="2" fill="#e0a526"/>
+  <rect x="44" y="36" width="13" height="8" rx="2" fill="#2f7fd6"/>
+  <!-- pages -->
+  <rect x="11" y="9" width="40" height="50" rx="3" fill="#e9dfc6"/>
+  <path d="M49 13 V55 M46.5 57 H15" stroke="#c7b994" stroke-width="1"/>
+  <!-- cover -->
+  <rect x="8" y="6" width="40" height="50" rx="3" fill="#1c1c22" stroke="#4a4a55" stroke-width="1.5"/>
+  <rect x="8" y="6" width="6" height="50" rx="2" fill="#0d0d11"/>
+  <!-- embossed B monogram -->
+  <path d="M24 19 H32 Q38 19 38 24.5 Q38 28.5 34.5 30 Q39.5 31.5 39.5 36.5 Q39.5 43 32.5 43 H24 Z M28.5 23 V28.5 H31.5 Q33.5 28.5 33.5 25.75 Q33.5 23 31.5 23 Z M28.5 32.5 V39 H32 Q35 39 35 35.75 Q35 32.5 32 32.5 Z"
+        fill="#c9a54e" fill-rule="evenodd"/>
+</svg>

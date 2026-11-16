@@ -27,13 +27,7 @@ local VERDICT_COLOR = { ignore = { 1, 0.35, 0.35 }, warn = { 1, 0.7, 0.2 } }
 
 -- The label names of a record as shown in the list, in label order.
 function TabList.LabelText(record)
-  local names = {}
-  for _, entry in ipairs(Const.Labels) do
-    if record.labels and record.labels[entry.id] then
-      names[#names + 1] = Text(Const.LabelLocaleKey(entry.id))
-    end
-  end
-  return table.concat(names, ", ")
+  return Output.LabelText(record.labels)
 end
 
 local function FormatDate(timestamp)

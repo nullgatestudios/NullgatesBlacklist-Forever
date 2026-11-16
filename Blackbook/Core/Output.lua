@@ -16,6 +16,18 @@ function Output.Text(key)
   return value
 end
 
+-- The display names of a label set { [id] = true }, in label order, joined by
+-- ", ". Empty for no labels.
+function Output.LabelText(labels)
+  local names = {}
+  if type(labels) == "table" then
+    for _, entry in ipairs(Const.Labels) do
+      if labels[entry.id] then names[#names + 1] = Output.Text(Const.LabelLocaleKey(entry.id)) end
+    end
+  end
+  return table.concat(names, ", ")
+end
+
 -- Player-provided text goes into chat, so a pipe must be escaped (section 10).
 function Output.Escape(value)
   return (tostring(value):gsub("|", "||"))

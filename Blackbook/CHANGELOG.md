@@ -4,6 +4,13 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-16
+### Added
+- Chat from players you warned about, or that only an imported list flags, now shows an icon in front of each line. If you turn chat hiding off, ignored players' lines carry a red cross.
+- The target frame shows a mark for flagged players: a diagonal strike for Ignore and a corner icon for Warn and Notice.
+- Player tooltips list the verdict, the reasons, your comment and up to three imported lists that flag the player.
+- Blackbook has its own icon in the add-on list and on the minimap button.
+
 ## [0.4.0] - 2026-11-16
 ### Added
 - The list window (`/bb`, or click the minimap button) with a "My list" tab: search, verdict and label filters, sortable columns, a scrolling list with tooltips, an add-player box, click to edit and Shift-click to delete. The scroll position stays put when the list changes.

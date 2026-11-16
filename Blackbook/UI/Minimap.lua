@@ -11,7 +11,6 @@ local Output = ns.Output
 local Minimap_ = {}
 ns.Minimap = Minimap_
 
-local ICON = "Interface/Icons/INV_Misc_Book_09"
 local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 
 -- Offset from the minimap centre of a button at an angle (degrees) on a circle.
@@ -87,7 +86,7 @@ function Minimap_.Register()
   local icon = button:CreateTexture(nil, "BACKGROUND")
   icon:SetSize(20, 20)
   icon:SetPoint("CENTER", button, "CENTER", 0, 1)
-  icon:SetTexture(ICON)
+  icon:SetTexture(Const.ICON)
   local border = button:CreateTexture(nil, "OVERLAY")
   border:SetSize(53, 53)
   border:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)

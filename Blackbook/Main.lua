@@ -129,6 +129,8 @@ loader:SetScript("OnEvent", function(_, event, name)
   ns.Requests.Register()
   ns.ContextMenu.Register()
   ns.Minimap.Register()
+  ns.Portrait.Register()
+  ns.Tooltip.Register()
   if state == "newer" then Print(Text("MSG_DB_NEWER")) end
   Print(Text("MSG_LOADED"))
 end)

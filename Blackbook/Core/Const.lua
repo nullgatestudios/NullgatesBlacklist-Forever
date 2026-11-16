@@ -8,6 +8,10 @@ ns.Const = Const
 Const.ADDON_NAME = "Blackbook"
 Const.SAVED_VARIABLE = "BlackbookDB"
 
+-- The addon icon (assets/icon.svg rendered to a 128x128 TGA): used by the TOC
+-- IconTexture line and by the minimap button.
+Const.ICON = "Interface/AddOns/" .. Const.ADDON_NAME .. "/icon.tga"
+
 -- Section 6.5.
 Const.SLASH_BLACKBOOK = "/blackbook"
 Const.SLASH_BLACKBOOK_SHORT = "/bb"

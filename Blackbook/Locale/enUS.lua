@@ -93,6 +93,10 @@ L.LABEL_SPAM = "Spam or advertising"
 L.LABEL_PRIVATE_DISPUTE = "Private dispute"
 L.LABEL_OTHER = "Other"
 
+-- Tooltip (section 6.6).
+L.TT_SOURCE = "Imported list: %s by %s"
+L.MSG_NO_TOOLTIP = "The tooltip hook is not available in this client, so tooltips are not extended."
+
 -- List window (section 9).
 L.TAB_LIST = "My list"
 L.TAB_SETTINGS = "Settings"

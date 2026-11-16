@@ -91,6 +91,10 @@ ns.L_DE = setmetatable({
   LABEL_PRIVATE_DISPUTE = "Persönlicher Streit",
   LABEL_OTHER = "Sonstiges",
 
+  -- Tooltip (section 6.6).
+  TT_SOURCE = "Importierte Liste: %s von %s",
+  MSG_NO_TOOLTIP = "Die Tooltip-Einbindung ist in diesem Client nicht verfügbar, deshalb werden Tooltips nicht erweitert.",
+
   -- List window (section 9).
   TAB_LIST = "Meine Liste",
   TAB_SETTINGS = "Einstellungen",
