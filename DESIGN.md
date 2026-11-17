@@ -573,7 +573,7 @@ For each delivery, the reviewer checks:
 
 ### 15.1 Semantic versioning
 
-- Format `MAJOR.MINOR.PATCH`: digits only, no leading zeros, no pre-release or build suffix (so zip names stay simple).
+- Format `MAJOR.MINOR.PATCH`, digits only with no leading zeros, optionally followed by a pre-release tag such as `-alpha`, `-beta` or `-rc.1` (`1.0.0-alpha` < `1.0.0-beta` < `1.0.0-rc.1` < `1.0.0`). No build suffix. The tag appears in the TOC, the changelog heading, the zip name and the git tag, and maps to the release type on the download site (alpha, beta, release).
 - **Single source of truth:** the `## Version:` line in `Blackbook/Blackbook.toc`. Never write the version anywhere else in code, locale files or tests. At runtime, read it with the metadata API from section 2 (`/bb version`).
 - Bump rules:
 

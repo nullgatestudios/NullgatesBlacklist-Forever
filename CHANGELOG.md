@@ -4,6 +4,21 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [1.0.0-alpha] - 2026-11-16
+First alpha of Blackbook 1.0. It gathers everything built so far into one release for wider testing.
+
+### What it does
+- A personal list of players you ignore or warn about, each with reasons and a comment. Ignored players' chat is hidden and their invites, duels and trades are declined; warned players get an icon in chat, a mark on the target frame and a tooltip line.
+- Share lists as codes and import other players' lists with your own rules for what each reason means.
+- Optional, silent sharing of your Ignore entries with friends and guild as hashed reports, with a one-time consent, your own rules for acting on them, and a way to revoke everything. Friends and guild are kept apart from the global channel, which is not built yet.
+- Optional automatic reply to whispers from players you ignore, a first-run setup wizard, and `/bb check` to test the client and the sharing connection on your own.
+- Fifteen languages, switchable at once. Apart from English and German they are machine translated and unchecked.
+
+### Known limits of this alpha
+- It has been tested only with automated tests, not yet in the real game client. Expect rough edges in layout and in the parts that depend on game interface names.
+- Friends sharing uses character friends only; Battle.net friends are not reached. Whispering a two-part name may not work on every client, which `/bb check` will show.
+- The global channel is not part of this release.
+
 ## [0.10.1] - 2026-11-16
 ### Changed
 - The windows are back in the game's own style, like its built-in dialogs: the framed dark panel with a gold title bar and close button, red panel buttons, standard tick boxes and text fields, and the game's fonts. The flat dark look from 0.9.0 is gone.

@@ -36,8 +36,8 @@ try {
     }
     $version = $meta['Version']
     if (-not $version) { throw "$name.toc has no '## Version:' line" }
-    if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
-        throw "version '$version' is not MAJOR.MINOR.PATCH"
+    if ($version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$') {
+        throw "version '$version' is not MAJOR.MINOR.PATCH with an optional pre-release tag such as -alpha"
     }
     foreach ($key in 'Interface', 'Title') {
         if (-not $meta[$key]) { throw "$name.toc has no '## ${key}:' line" }
