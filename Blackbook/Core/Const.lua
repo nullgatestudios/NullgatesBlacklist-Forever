@@ -138,7 +138,21 @@ Const.Community = {
   retries = 3,            -- send attempts per message
   retryDelay = 5,         -- seconds before a failed send is tried again
   globalMinRuleTier = 3,  -- a global rule cannot be set to react below this tier
+  globalGap = 2,          -- seconds between two messages on the global channel
+  globalPerMinute = 600,  -- records accepted per minute from all global senders together
+  relayMin = 5,           -- a received global report is passed on after this many seconds ...
+  relayMax = 60,          -- ... to this many
+  relaySeenCap = 20000,   -- reports remembered so each is passed on once
+  relayQueueCap = 500,    -- passing on stops while this many global messages wait
 }
+
+-- The global channel (section 8.10): one fixed channel name, and a version for its
+-- own, separate consent text.
+Const.GLOBAL_CHANNEL = "BlackbookGl"
+Const.GlobalConsentVersion = 1
+
+-- Constant part of the key of the message envelope on the global channel.
+Const.EnvelopeSalt = "blackbook-envelope-v1"
 
 -- Hash inputs (section 8.2).
 Const.SeasonSalt = "blackbook-season-v1"

@@ -53,6 +53,10 @@ local TESTS = {
     return C_FriendList ~= nil and Has(C_FriendList.GetNumFriends) and Has(C_FriendList.GetFriendInfoByIndex)
   end },
   { "CHECK_GUILD", function() return Has(IsInGuild) end },
+  { "CHECK_CHANNEL", function()
+    return (Has(JoinChannelByName) or Has(JoinTemporaryChannel)) and Has(GetChannelName)
+      and Has(LeaveChannelByName)
+  end },
   { "CHECK_TIMER", function() return C_Timer ~= nil and Has(C_Timer.After) end },
   { "CHECK_COMPRESS", function()
     return C_EncodingUtil ~= nil and Has(C_EncodingUtil.CompressString) and Has(C_EncodingUtil.DecompressString)

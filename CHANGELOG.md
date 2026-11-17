@@ -4,6 +4,18 @@ All notable changes to Blackbook are listed here. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [1.0.0-alpha.2] - 2026-11-16
+### Added
+- **The global channel.** Besides friends and guild you can now share and receive reports on a global channel that every Blackbook user who switched it on joins. It is its own world: separate switches, separate data, higher thresholds (a flag needs many more reporters) and rules that only react from tier 3. It is public, so the first time you turn a global switch on you get a notice of its own that you must accept, and "Revoke and delete" withdraws it again.
+- The channel is invisible in your chat: it is joined only while a global switch is on, left when both are off, taken out of every chat window, and its join messages are hidden. Messages on it are scrambled with a key that changes every hour. That is obfuscation, not secrecy, and the notice says so.
+- Reports are passed on once, after a random 5 to 60 seconds, so they reach players who were not listening when they were first sent, and never loop. There are limits per sender and for all senders together against floods.
+- **Test mode.** Turn on "Test mode" on the Settings tab (or type `/bb test mode`) and every other player's tooltip shows a sample of what Blackbook can say: your own ignore or warning, an imported list, a guild flag, friends and guild together, or a global flag. Different players show different examples, the last line says it is sample data, and your own character is left alone. It switches itself off when you log out.
+- `/bb check` also reports whether the client has the channel functions global sharing needs.
+- The Rules tab offers Global as a source and moves the tier to 3 when you choose it.
+
+### Changed
+- All fifteen languages cover the new texts (machine translated, apart from English and German).
+
 ## [1.0.0-alpha] - 2026-11-16
 First alpha of Blackbook 1.0. It gathers everything built so far into one release for wider testing.
 

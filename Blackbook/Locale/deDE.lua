@@ -203,7 +203,7 @@ ns.Locale.Register("de", "Deutsch", setmetatable({
   COMM_NOT_CONFIRMED = "Bestätige den Hinweis, um das Teilen einschalten zu können.",
   COMM_SEND = "Meine Berichte senden",
   COMM_RECEIVE = "Berichte empfangen",
-  COMM_GLOBAL_SOON = "Globaler Kanal: noch nicht verfügbar. Er wird völlig getrennt von Freunden und Gilde geführt.",
+  COMM_GLOBAL_NOTE = "Global ist für alle Blackbook-Nutzer öffentlich, hat einen eigenen Hinweis und bleibt getrennt von Freunden und Gilde.",
   COMM_LABELS = "Gründe, die geteilt werden dürfen",
   COMM_PREVIEW = "Zeigen, was gesendet würde",
   COMM_PREVIEW_EMPTY = "Es würde nichts gesendet: Kein Ignorier-Eintrag hat einen Grund, der geteilt werden darf.",
@@ -287,4 +287,18 @@ ns.Locale.Register("de", "Deutsch", setmetatable({
 
   -- Setup wizard buttons.
   WIZ_DONE = "Fertig",
+
+  -- Global channel and test mode (section 8.10, 6.6).
+  GLOBAL_NOTICE = "Der globale Kanal ist öffentlich: Jeder Blackbook-Nutzer, der ihm beitritt, kann lesen, was dort gesendet wird, und dein Client gibt auch Berichte weiter, die er von anderen erhält. Gesendet werden nur ein Hash des Spielernamens, die Gründe, eine Tagesnummer und ein anonymes Kennzeichen, nie Kommentare oder dein eigener Name. Die Verschleierung der Nachrichten ist keine Geheimhaltung; wer einen veränderten Client nutzt, kann alles lesen. Die Anonymität beschränkt sich hier auf die Daten selbst. Globale Berichte brauchen viele Melder, bevor sie zählen, und globale Regeln greifen erst ab Stufe 3. Du kannst ihn jederzeit auf dem Reiter Community ausschalten.",
+  OPT_TEST_MODE = "Testmodus: Beispielzeilen von Blackbook in den Tooltips anderer Spieler zeigen (bis zum Abmelden)",
+  MSG_TEST_MODE_ON = "Der Testmodus ist an. Fahre über andere Spieler, um Beispiel-Tooltips zu sehen. Er schaltet sich beim Abmelden aus.",
+  MSG_TEST_MODE_OFF = "Der Testmodus ist aus.",
+  TT_TEST_BANNER = "Blackbook-Testmodus: Das sind Beispieldaten.",
+  SAMPLE_COMMENT_IGNORE = "Beispielkommentar: hat im Handelschat ständig Leute beleidigt.",
+  SAMPLE_COMMENT_WARN = "Beispielkommentar: hat Gegenstände verkauft und nie geliefert.",
+  SAMPLE_COMMENT_LIST = "Beispielkommentar: spammt alle paar Minuten Werbung.",
+  SAMPLE_LIST_NAME = "Beispielliste",
+  SAMPLE_AUTHOR = "Ein Spieler",
+  HELP_TESTMODE = "/bb test mode - Testmodus ein- oder ausschalten, um Beispiel-Tooltips zu sehen",
+  CHECK_CHANNEL = "Eigene Kanäle (globales Teilen)",
 }, { __index = ns.Locale.Base }))

@@ -63,7 +63,7 @@ local function ShowHelp()
   local keys = {
     "HELP_HEADER", "HELP_TOGGLE", "HELP_LIST", "HELP_IGNORE", "HELP_WARN",
     "HELP_REMOVE", "HELP_SETUP", "HELP_MINIMAP", "HELP_LANG", "HELP_VERSION",
-    "HELP_TEST", "HELP_CHECK", "HELP_HELP",
+    "HELP_TEST", "HELP_TESTMODE", "HELP_CHECK", "HELP_HELP",
   }
   for _, key in ipairs(keys) do
     Print(Text(key))
@@ -91,7 +91,12 @@ local function HandleSlash(input)
     end
   elseif command == "test" then
     local verdict = string.lower(rest)
-    if Const.VerdictRank[verdict] then
+    if verdict == "mode" then
+      local on = not ns.Tooltip.TestMode()
+      ns.Tooltip.SetTestMode(on)
+      Print(Text(on and "MSG_TEST_MODE_ON" or "MSG_TEST_MODE_OFF"))
+      ns.Manager.Refresh()
+    elseif Const.VerdictRank[verdict] then
       ns.Chat.Preview(verdict)
     else
       Print(Text("MSG_TEST_USAGE"))
@@ -136,6 +141,7 @@ loader:SetScript("OnEvent", function(_, event, name)
   ns.Portrait.Register()
   ns.Tooltip.Register()
   ns.Net.Register()
+  ns.Global.Register()
   ns.Reply.Register()
   if state == "newer" then Print(Text("MSG_DB_NEWER")) end
   Print(Text("MSG_LOADED"))

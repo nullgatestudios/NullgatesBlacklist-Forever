@@ -54,6 +54,7 @@ local function Defaults()
       global = { send = false, receive = false },
       shareLabels = shareLabels,
       consentVersion = 0,
+      globalConsentVersion = 0,
       rules = {},
     },
   }

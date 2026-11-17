@@ -13,19 +13,26 @@ local Settings = ns.Settings
 local Consent = {}
 ns.Consent = Consent
 
--- Sources that can be switched on in this version. "global" arrives with M9 and
--- stays off and untouchable until then.
-local AVAILABLE = { friends = true, guild = true }
+-- Sources that can be switched on.
+local AVAILABLE = { friends = true, guild = true, global = true }
 
 function Consent.Active()
   return Settings.Get("community.consentVersion") == Const.ConsentVersion
 end
 
--- True when the player confirmed the disclosure and switched this on.
--- direction is "send" or "receive".
+-- The global channel is public to everyone who runs the addon, so it has a
+-- notice and a confirmation of its own on top of the general one.
+function Consent.GlobalActive()
+  return Settings.Get("community.globalConsentVersion") == Const.GlobalConsentVersion
+end
+
+-- True when the player confirmed the disclosure (and, for the global channel, its
+-- own notice) and switched this on. direction is "send" or "receive".
 function Consent.Allows(source, direction)
   if not AVAILABLE[source] or (direction ~= "send" and direction ~= "receive") then return false end
-  return Consent.Active() and Settings.Get("community." .. source .. "." .. direction) == true
+  if not Consent.Active() then return false end
+  if source == "global" and not Consent.GlobalActive() then return false end
+  return Settings.Get("community." .. source .. "." .. direction) == true
 end
 
 -- The sources the player receives from, in a fixed order.
@@ -51,11 +58,20 @@ function Consent.Confirm()
   Events:Fire(Const.Events.COMMUNITY_CHANGED)
 end
 
+-- Confirms the notice of the global channel. That also confirms the general
+-- notice, whose content it repeats.
+function Consent.ConfirmGlobal()
+  Settings.Set("community.consentVersion", Const.ConsentVersion)
+  Settings.Set("community.globalConsentVersion", Const.GlobalConsentVersion)
+  Events:Fire(Const.Events.COMMUNITY_CHANGED)
+end
+
 -- Switches one direction of one source. Refused (false) before the disclosure
--- is confirmed, and for a source that is not available yet.
+-- is confirmed (the global channel needs its own).
 function Consent.SetToggle(source, direction, value)
   if not AVAILABLE[source] or (direction ~= "send" and direction ~= "receive") then return false end
   if value and not Consent.Active() then return false end
+  if value and source == "global" and not Consent.GlobalActive() then return false end
   Settings.Set("community." .. source .. "." .. direction, value and true or false)
   Events:Fire(Const.Events.COMMUNITY_CHANGED)
   return true
@@ -70,6 +86,7 @@ function Consent.Revoke()
     Settings.Set("community." .. source .. ".receive", false)
   end
   Settings.Set("community.consentVersion", 0)
+  Settings.Set("community.globalConsentVersion", 0)
   ns.Aggregate.Purge()
   if ns.db and ns.db.community then ns.db.community.sent = {} end
   Events:Fire(Const.Events.COMMUNITY_CHANGED)

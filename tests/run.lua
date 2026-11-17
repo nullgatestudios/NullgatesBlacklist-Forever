@@ -62,6 +62,8 @@ Load("Community/Aggregate.lua")
 Load("Community/Consent.lua")
 Load("Community/Rules.lua")
 Load("Community/Roster.lua")
+Load("Community/Envelope.lua")
+Load("Community/Global.lua")
 Load("Community/Net.lua")
 Load("Enforce/Reply.lua")
 Load("UI/ReplyControl.lua")
@@ -3246,6 +3248,604 @@ Group("All languages", function()
 
   -- A language is only as complete as its text: any gap falls back to English.
   EQ(#all.Locale.List(), 15, "the picker offers fifteen languages")
+end)
+
+-- --- Global channel: the envelope (section 8.10) ------------------------------------------------------------
+
+Group("Envelope", function()
+  local Envelope, Report, Const = ns.Envelope, ns.Report, ns.Const
+  local message = "R1\t0123456789abcdef:7:19000:89abcdef;fedcba9876543210:1:19001:01234567"
+
+  local scrambled = Envelope.Encode(message, 470000)
+  EQ(scrambled, "pg37Xin:ggbR20ahglm;72elekH5R3;8iHb44fXjRgpmb4n8g085lkmlk483fh6:k9:Rap",
+    "the scrambling of a known message for a known hour has not changed")
+  EQ(#scrambled, #message, "the scrambled text is as long as the message")
+  OK(not scrambled:find("[^%w:;~]"), "and uses only printable letters, digits and ':' ';' '~'")
+  EQ(Envelope.Decode(scrambled, 470000), message, "it unscrambles with the same hour")
+  OK(Envelope.Encode(message, 470001) ~= scrambled, "another hour scrambles it differently")
+  OK(Envelope.Decode(scrambled, 470001) ~= message, "and does not unscramble with another hour")
+  EQ(Envelope.Encode(message, 470000), scrambled, "the scrambling is deterministic")
+
+  -- A report of any shape survives, with the TAB handled.
+  local items = {}
+  for index = 1, 6 do
+    items[index] = { hash = HashOf(index), mask = 511, day = 19000 + index, token = TokenOf(index) }
+  end
+  local text = Report.Messages(items)[1]
+  for _, hour in ipairs({ 0, 1, 470000, 999999 }) do
+    EQ(Envelope.Decode(Envelope.Encode(text, hour), hour), text, "a full report round trips for hour " .. hour)
+  end
+  local retraction = Report.RetractMessages({ { hash = HashOf(1), token = TokenOf(1) } })[1]
+  EQ(Envelope.Decode(Envelope.Encode(retraction, 5), 5), retraction, "and so does a retraction")
+  OK(Envelope.Encode(text, 5):find("\t", 1, true) == nil, "the scrambled text has no TAB in it")
+
+  -- Text that is not a report cannot be scrambled; foreign text cannot be opened.
+  EQ(Envelope.Encode("hello world", 5), nil, "text with other symbols is refused")
+  EQ(Envelope.Encode("R1\tabc|def", 5), nil, "a pipe is refused")
+  EQ(Envelope.Decode("hello world", 5), nil, "text outside the alphabet is not opened")
+  EQ(Envelope.Decode("", 5), "", "empty text is empty")
+  EQ(Envelope.Encode("", 5), "", "and so is its scrambling")
+
+  -- Only the right hour gives a readable report.
+  local today = ns.Hash.Day(1700000000)
+  local sample = Envelope.Encode("R1\t" .. HashOf(1) .. ":3:" .. today .. ":" .. TokenOf(1), 470000)
+  local readable = 0
+  for hour = 469990, 470010 do
+    local plain = Envelope.Decode(sample, hour)
+    if plain and Report.Parse(plain, today) then readable = readable + 1 end
+  end
+  EQ(readable, 1, "of twenty-one hours only the right one gives a report that parses")
+
+  -- The hours a receiver tries.
+  EQ(Envelope.Hour(3600 * 5 + 10), 5, "the hour bucket")
+  EQ(Envelope.Hour(3600 * 5 - 1), 4, "the last second of an hour")
+  local hours = Envelope.Hours(3600 * 5 + 10)
+  EQ(hours[1] .. "," .. hours[2] .. "," .. hours[3], "5,4,6", "this hour, the one before and the one after")
+
+  -- A different salt scrambles differently (the key is the salt plus the hour).
+  local savedSalt = Const.EnvelopeSalt
+  Const.EnvelopeSalt = "another salt"
+  OK(Envelope.Encode(message, 470000) ~= scrambled, "a different constant gives a different scrambling")
+  Const.EnvelopeSalt = savedSalt
+end)
+
+-- --- Global channel: joining and leaving --------------------------------------------------------------------
+
+Group("Global channel", function()
+  local Global, Consent, Settings, Const = ns.Global, ns.Consent, ns.Settings, ns.Const
+  FreshDb()
+  Global.Reset()
+  local joined, joins, leaves, hides, timers, fired = false, {}, {}, {}, {}, 0
+  local now = 0
+  Global.io = {
+    join = function(name) joins[#joins + 1] = name return true end,
+    leave = function(name) leaves[#leaves + 1] = name joined = false return true end,
+    id = function() return joined and 7 or nil end,
+    hideFromChat = function(name) hides[#hides + 1] = name end,
+    after = function(delay, fn) timers[#timers + 1] = { at = now + delay, fn = fn } end,
+  }
+  local function Advance(seconds)
+    local limit = now + seconds
+    repeat
+      local pick
+      for index, timer in ipairs(timers) do
+        if timer.at <= limit and (not pick or timer.at < timers[pick].at) then pick = index end
+      end
+      if pick then
+        local timer = table.remove(timers, pick)
+        now = math.max(now, timer.at)
+        timer.fn()
+      end
+    until not pick
+    now = limit
+  end
+  ns.Events:On("COMMUNITY_CHANGED", function() fired = fired + 1 end)
+
+  EQ(Global.name, "BlackbookGl", "the channel has a fixed name")
+  EQ(Const.GLOBAL_CHANNEL, Global.name, "taken from the constants")
+
+  -- Names from events.
+  OK(Global.IsOurs("BlackbookGl"), "the bare name is ours")
+  OK(Global.IsOurs("blackbookgl"), "ignoring case")
+  OK(Global.IsOurs("5. BlackbookGl"), "with a channel number in front")
+  OK(Global.IsOurs("12.   BlackbookGl  "), "and spaces")
+  EQ(Global.IsOurs("Trade"), false, "another channel is not")
+  EQ(Global.IsOurs("5. Trade - City"), false, "with its number either")
+  EQ(Global.IsOurs("BlackbookGl2"), false, "a longer name is not")
+  EQ(Global.IsOurs(nil), false, "nothing is not")
+  issecretvalue = function(value) return value == SECRET end
+  EQ(Global.IsOurs(SECRET), false, "a secret value is not")
+  issecretvalue = nil
+
+  -- Nothing is joined without consent.
+  EQ(Global.Wanted(), false, "not wanted at first")
+  Global.Sync()
+  EQ(#joins, 0, "so nothing is joined")
+  Consent.Confirm()
+  Consent.SetToggle("guild", "send", true)
+  EQ(Global.Wanted(), false, "other sources do not want the global channel")
+  EQ(Consent.SetToggle("global", "send", true), false, "a global switch needs its own notice first")
+  EQ(#joins, 0, "still nothing joined")
+
+  -- With the notice confirmed and a switch on the channel is joined.
+  Consent.ConfirmGlobal()
+  OK(Consent.SetToggle("global", "receive", true), "the switch works after the notice")
+  OK(Global.Wanted(), "now the channel is wanted")
+  Global.Sync()
+  EQ(joins[1], "BlackbookGl", "it joins the channel")
+  EQ(#joins, 1, "once")
+  Global.Sync()
+  EQ(#joins, 1, "asking again while the join is pending does not join twice")
+  local before = fired
+  joined = true
+  Advance(2.1)
+  EQ(hides[#hides], "BlackbookGl", "once joined it is taken out of the chat windows")
+  EQ(fired, before + 1, "and the rest of the addon is told it is there")
+  Global.Sync()
+  EQ(#joins, 1, "a joined channel is not joined again")
+
+  -- A join that does not work is tried again a few times, then given up.
+  joined = false
+  joins, timers = {}, {}
+  Global.Reset()
+  Global.Sync()
+  Advance(2.1)
+  Advance(10.1)
+  Advance(10.1)
+  Advance(10.1)
+  OK(#joins >= 2 and #joins <= 5, "a failed join is retried a few times (" .. #joins .. ")")
+  Advance(100)
+  local settled = #joins
+  Advance(100)
+  EQ(#joins, settled, "and then given up")
+
+  -- Switching everything off leaves the channel.
+  joined = true
+  Consent.SetToggle("global", "receive", false)
+  EQ(Global.Wanted(), false, "with both switches off it is not wanted")
+  Global.Sync()
+  EQ(leaves[#leaves], "BlackbookGl", "the channel is left")
+  joined = false
+  Global.Sync()
+  EQ(#leaves, 1, "and not left twice")
+  Consent.SetToggle("global", "send", true)
+  OK(Global.Wanted(), "sending alone also wants it")
+
+  -- The channel's notices stay out of the chat.
+  EQ(Global.Filter(nil, "CHAT_MSG_CHANNEL_NOTICE", "YOU_JOINED", "Me", "", "7. BlackbookGl", "", 0, 0, 7, "BlackbookGl"), true,
+    "the join notice of our channel is hidden")
+  EQ(Global.Filter(nil, "CHAT_MSG_CHANNEL_NOTICE", "YOU_JOINED", "Me", "", "2. Trade", "", 0, 0, 2, "Trade"), false,
+    "the notice of another channel is shown")
+  EQ(Global.Filter(nil, "CHAT_MSG_CHANNEL_JOIN", "", "Somebody", "", "", "", 0, 0, 0, "BlackbookGl"), true,
+    "someone else joining is hidden too")
+
+  -- Registration listens for the notices and the switches.
+  local savedCreate, savedTimer, savedAdd = CreateFrame, C_Timer, ChatFrame_AddMessageEventFilter
+  local filters, frames = {}, {}
+  CreateFrame = function()
+    local frame = { events = {}, scripts = {} }
+    function frame:RegisterEvent(event) self.events[event] = true end
+    function frame:SetScript(name, fn) self.scripts[name] = fn end
+    frames[#frames + 1] = frame
+    return frame
+  end
+  C_Timer = { After = function() end }
+  ChatFrame_AddMessageEventFilter = function(event, fn) filters[event] = fn end
+  OK(Global.Register(), "registration succeeds")
+  for _, event in ipairs({ "CHAT_MSG_CHANNEL_NOTICE", "CHAT_MSG_CHANNEL_NOTICE_USER", "CHAT_MSG_CHANNEL_JOIN",
+    "CHAT_MSG_CHANNEL_LEAVE" }) do
+    EQ(filters[event], Global.Filter, "the notice filter is installed for " .. event)
+  end
+  OK(frames[1] and frames[1].events.PLAYER_ENTERING_WORLD, "the join waits for the world to load")
+  OK(Global.Register(), "registering twice is harmless")
+  CreateFrame, C_Timer, ChatFrame_AddMessageEventFilter = savedCreate, savedTimer, savedAdd
+  EQ(Global.Reset(), nil, "reset forgets what was tried")
+end)
+
+-- --- Global channel: consent of its own (section 8.10) ----------------------------------------------------------
+
+Group("Global consent", function()
+  local Consent, Settings, Const = ns.Consent, ns.Settings, ns.Const
+  FreshDb()
+  EQ(Consent.GlobalActive(), false, "the global notice is not confirmed at first")
+  Consent.Confirm()
+  EQ(Consent.GlobalActive(), false, "the general notice does not confirm the global one")
+  EQ(Consent.SetToggle("global", "send", true), false, "so a global switch cannot be turned on")
+  EQ(Consent.Allows("global", "send"), false, "and is not allowed")
+  OK(Consent.SetToggle("guild", "send", true), "while the guild switch works")
+
+  Settings.Set("community.global.send", true) -- as if hand edited
+  EQ(Consent.Allows("global", "send"), false, "a switch set without the notice does nothing")
+  Settings.Set("community.global.send", false)
+
+  FreshDb()
+  Consent.ConfirmGlobal()
+  EQ(Consent.GlobalActive(), true, "confirming the global notice")
+  EQ(Consent.Active(), true, "also confirms the general notice, which it repeats")
+  OK(Consent.SetToggle("global", "receive", true), "a global switch now works")
+  EQ(Consent.Allows("global", "receive"), true, "and is allowed")
+  EQ(Consent.Allows("global", "send"), false, "independently of the other direction")
+  EQ(Consent.Allows("friends", "receive"), false, "and of the other sources")
+  EQ(table.concat(Consent.Receiving(), ","), "global", "it is a receiving source")
+
+  -- Raising the global notice version switches it off until confirmed again.
+  Const.GlobalConsentVersion = Const.GlobalConsentVersion + 1
+  EQ(Consent.GlobalActive(), false, "a new global notice needs a new confirmation")
+  EQ(Consent.Allows("global", "receive"), false, "so the switch stops working")
+  OK(Consent.Allows("guild", "receive") == false, "(the guild was never on)")
+  Const.GlobalConsentVersion = Const.GlobalConsentVersion - 1
+  EQ(Consent.GlobalActive(), true, "and works again at the old version")
+
+  -- Revoke withdraws both.
+  Consent.Revoke()
+  EQ(Consent.GlobalActive(), false, "revoking withdraws the global confirmation")
+  EQ(Settings.Get("community.global.receive"), false, "and the global switches")
+  EQ(Consent.Active(), false, "and the general one")
+end)
+
+-- --- Global channel: sending, receiving and passing on ------------------------------------------------------------
+
+Group("Global sending and receiving", function()
+  local Net, Global, Consent, Aggregate, Hash, Report, Envelope, Const, Resolver = ns.Net, ns.Global, ns.Consent,
+    ns.Aggregate, ns.Hash, ns.Report, ns.Envelope, ns.Const, ns.Resolver
+  local PREFIX = Const.COMMUNITY_PREFIX
+  local SERVER = 1700000000
+  local today = Hash.Day(SERVER)
+
+  local now, timers, sent = 0, {}, {}
+  local sendOk, channel, randomValue = true, 7, 5
+  Net.io = {
+    send = function(prefix, text, ch, target)
+      if not sendOk then return false end
+      sent[#sent + 1] = { prefix = prefix, text = text, channel = ch, target = target, at = now }
+      return true
+    end,
+    after = function(delay, fn) timers[#timers + 1] = { at = now + delay, fn = fn } end,
+    now = function() return now end,
+    serverTime = function() return SERVER end,
+    random = function() return randomValue end,
+  }
+  Global.io = {
+    join = function() return true end, leave = function() return true end,
+    id = function() return channel end,
+    hideFromChat = function() end,
+    after = function(delay, fn) timers[#timers + 1] = { at = now + delay, fn = fn } end,
+  }
+  local function Advance(seconds)
+    local limit = now + seconds
+    repeat
+      local pick
+      for index, timer in ipairs(timers) do
+        if timer.at <= limit and (not pick or timer.at < timers[pick].at) then pick = index end
+      end
+      if pick then
+        local timer = table.remove(timers, pick)
+        now = math.max(now, timer.at)
+        timer.fn()
+      end
+    until not pick
+    now = limit
+  end
+  local function Take() local taken = sent sent = {} return taken end
+  local function Me(first, last) UnitName = function(unit) if unit == "player" then return first, last end end end
+  local function Fresh()
+    sendOk, channel, randomValue = true, 7, 5
+    Advance(100000)
+    Net.Reset()
+    Global.Reset()
+    FreshDb()
+    Me("Alice", "One")
+    sent = {}
+    Consent.ConfirmGlobal()
+  end
+  local function Open(message)  -- the report a sent global message carries
+    local text = Envelope.Decode(message.text, Envelope.Hour(SERVER))
+    return text and Report.Parse(text, today)
+  end
+  local function Wire(items) return Envelope.Encode(Report.Messages(items)[1], Envelope.Hour(SERVER)) end
+  local function Item(n, mask, day) return { hash = HashOf(n), mask = mask or 1, day = day or today, token = TokenOf(n) } end
+  local function Deliver(text, sender, name)
+    Net.OnMessage(PREFIX, text, "CHANNEL", sender or "Carol Three", name or "BlackbookGl")
+  end
+
+  -- Sending: the record goes out enveloped, to the channel number, slowly.
+  Fresh()
+  Consent.SetToggle("global", "send", true)
+  ns.Records.Save("Bad One", "ignore", { scam = true, toxicity = true }, "very private comment")
+  Net.Sync()
+  local out = Take()
+  EQ(#out, 1, "one message on the global channel")
+  EQ(out[1].prefix, PREFIX, "on the community prefix")
+  EQ(out[1].channel, "CHANNEL", "to a channel")
+  EQ(out[1].target, 7, "with the channel's number")
+  OK(not out[1].text:find("\t", 1, true) and not out[1].text:find("R1", 1, true), "the text is scrambled, not a plain report")
+  local report = Open(out[1])
+  EQ(report.kind, "R1", "opened with the hour's key it is a report")
+  EQ(report.items[1].hash, Hash.Target("bad one", Hash.Season(SERVER)), "naming the target only by its hash")
+  OK(not out[1].text:find("Bad", 1, true) and not out[1].text:find("private", 1, true), "no name or comment on the wire")
+  EQ(ns.db.community.sent.global[report.items[1].hash], report.items[1].mask, "the announcement is remembered for the global class")
+  EQ(ns.db.community.sent.guild, nil, "and not for the guild")
+
+  -- The gap on the global channel is longer than elsewhere.
+  Fresh()
+  Consent.SetToggle("global", "send", true)
+  for index = 1, 8 do ns.Records.Save("Player" .. string.char(64 + index), "ignore", { scam = true }, "c") end
+  Advance(1.1) -- the switch just went on, so the debounced sync sends the whole backlog
+  Advance(10)
+  local many = Take()
+  EQ(#many, 2, "eight records are two messages")
+  OK(many[2].at - many[1].at >= Const.Community.globalGap, "at least " .. Const.Community.globalGap .. " seconds apart")
+
+  -- No channel, no sending: and the report is not marked as announced.
+  Fresh()
+  Consent.SetToggle("global", "send", true)
+  channel = nil
+  ns.Records.Save("Bad One", "ignore", { scam = true }, "c")
+  Net.Sync()
+  Advance(5)
+  EQ(#Take(), 0, "nothing is sent while the channel is not joined")
+  EQ(ns.db.community.sent and ns.db.community.sent.global, nil, "and nothing is marked as announced")
+
+  -- Joining later sends the whole backlog.
+  channel = 7
+  Net.Changed()
+  Advance(3)
+  EQ(#Take(), 1, "once the channel is there the backlog goes out")
+
+  -- A change retracts on the channel, enveloped too.
+  ns.Records.Remove("Bad One")
+  Net.Sync()
+  Advance(5)
+  local gone = Take()
+  EQ(#gone, 1, "removing the record sends one message")
+  EQ(Open(gone[1]).kind, "X1", "a retraction")
+
+  -- Receiving.
+  Fresh()
+  Consent.SetToggle("global", "receive", true)
+  local first = Wire({ Item(1, Const.LabelValue.scam) })
+  Deliver(first)
+  local store = ns.db.community.reports.global and ns.db.community.reports.global[HashOf(1)]
+  OK(store ~= nil and store.scam[TokenOf(1)] == today, "a global report is filed under the global source")
+  EQ(ns.db.community.reports.guild, nil, "not under the guild")
+  EQ(ns.db.community.reports.friends, nil, "nor under friends")
+  Deliver(first, "Carol Three", "5. BlackbookGl")
+  Deliver(Wire({ Item(2) }), "Carol Three", "BLACKBOOKGL")
+  OK(ns.db.community.reports.global[HashOf(2)] ~= nil, "the channel name may come with its number and in any case")
+
+  local count = Aggregate.Counts()
+  Deliver(Wire({ Item(3) }), "Carol Three", "Trade")
+  Net.OnMessage(PREFIX, Wire({ Item(3) }), "CHANNEL", "Carol Three", nil)
+  Deliver("totally not a report", "Carol Three")
+  Deliver(Envelope.Encode("R1\t00:00:00:00", Envelope.Hour(SERVER)), "Carol Three")
+  Deliver(Wire({ Item(3) }), "Alice One")
+  Net.OnMessage(PREFIX, Wire({ Item(3) }), "SAY", "Carol Three", "BlackbookGl")
+  Net.OnMessage("OTHER", Wire({ Item(3) }), "CHANNEL", "Carol Three", "BlackbookGl")
+  Net.OnMessage(PREFIX, Wire({ Item(3) }), "CHANNEL", nil, "BlackbookGl")
+  EQ(Aggregate.Counts(), count, "other channels, plain text, garbage, our own messages, other prefixes and no sender add nothing")
+
+  -- The hours: this one, the one before and the one after.
+  local function ForHour(n, hour) return Envelope.Encode(Report.Messages({ Item(n) })[1], hour) end
+  Deliver(ForHour(10, Envelope.Hour(SERVER) - 1))
+  OK(ns.db.community.reports.global[HashOf(10)], "a message from the hour before is read")
+  Deliver(ForHour(11, Envelope.Hour(SERVER) + 1))
+  OK(ns.db.community.reports.global[HashOf(11)], "and one from a clock that runs ahead")
+  Deliver(ForHour(12, Envelope.Hour(SERVER) - 2))
+  EQ(ns.db.community.reports.global[HashOf(12)], nil, "but not one from two hours ago")
+
+  -- Not receiving: nothing is filed.
+  Consent.SetToggle("global", "receive", false)
+  Deliver(Wire({ Item(20) }))
+  EQ(ns.db.community.reports.global[HashOf(20)], nil, "with receiving switched off nothing is filed")
+  Consent.SetToggle("global", "receive", true)
+
+  -- Retraction.
+  Deliver(Envelope.Encode(Report.RetractMessages({ { hash = HashOf(1), token = TokenOf(1) } })[1], Envelope.Hour(SERVER)))
+  EQ(ns.db.community.reports.global[HashOf(1)], nil, "a retraction removes the report")
+
+  -- No sender is stored.
+  local keys = {}
+  local function Walk(value)
+    if type(value) == "table" then for k, v in pairs(value) do keys[#keys + 1] = tostring(k) Walk(v) end
+    else keys[#keys + 1] = tostring(value) end
+  end
+  Walk(ns.db.community.reports)
+  OK(not table.concat(keys, " "):find("Carol"), "nothing in the store names the sender")
+
+  -- Rate limits: per sender, and one ceiling for all senders together.
+  Fresh()
+  Consent.SetToggle("global", "receive", true)
+  local oldMinute, oldCeiling = Const.Community.perMinute, Const.Community.globalPerMinute
+  Const.Community.perMinute, Const.Community.globalPerMinute = 1000, 25
+  local function Burst(sender, from, total)
+    for index = from, from + total - 1 do Deliver(Wire({ Item(index) }), sender) end
+  end
+  Burst("Flood One", 100, 20)
+  EQ(Aggregate.Counts(), 20, "twenty records from one sender are all taken")
+  Burst("Flood Two", 200, 20)
+  EQ(Aggregate.Counts(), 25, "the ceiling for all senders together stops the rest")
+  Advance(61)
+  Burst("Flood Two", 300, 10)
+  EQ(Aggregate.Counts(), 35, "and a new minute starts afresh")
+  Const.Community.globalPerMinute = oldCeiling
+  Const.Community.perMinute = 30
+  Burst("Flood Three", 400, 40)
+  EQ(Aggregate.Counts(), 65, "a single sender is still held to its own 30 a minute")
+  Const.Community.perMinute = oldMinute
+
+  -- Tiers and rules use the global thresholds, and global data is its own world.
+  Fresh()
+  FreshDb()
+  Me("Alice", "One")
+  Consent.ConfirmGlobal()
+  Consent.SetToggle("global", "receive", true)
+  local key = "global flag"
+  local hash = Hash.Candidates(key, SERVER)[1]
+  for n = 1, 4 do ns.Aggregate.Add(hash, Const.LabelValue.scam, today, TokenOf(n), "global") end
+  ns.Events:Fire("COMMUNITY_CHANGED")
+  EQ(Resolver.Verdict("Global Flag"), nil, "four global reporters are no flag (the global threshold is five)")
+  ns.Aggregate.Add(hash, Const.LabelValue.scam, today, TokenOf(5), "global")
+  ns.Events:Fire("COMMUNITY_CHANGED")
+  EQ(Resolver.Verdict("Global Flag"), "notice", "five make a notice")
+  local reasons = Resolver.Sources("Global Flag")
+  EQ(reasons[1].from, "global", "from the global source")
+  EQ(reasons[1].tier, 1, "at tier 1")
+  local ok, err = ns.Rules.Add({ label = "scam", source = "global", minTier = 2, verdict = "ignore" })
+  EQ(ok, false, "a global rule below tier 3 is refused")
+  EQ(err, "ERR_RULE_GLOBAL", "with the reason")
+  OK(ns.Rules.Add({ label = "scam", source = "global", minTier = 3, verdict = "warn" }), "at tier 3 it is accepted")
+  EQ(Resolver.Verdict("Global Flag"), "notice", "and does not react to a tier 1 flag")
+  for n = 6, 20 do ns.Aggregate.Add(hash, Const.LabelValue.scam, today, TokenOf(n), "global") end
+  ns.Events:Fire("COMMUNITY_CHANGED")
+  EQ(Resolver.Verdict("Global Flag"), "warn", "twenty reporters reach tier 3 and the rule applies")
+  local lines = ns.Tooltip.Lines("Global Flag")
+  local found
+  for _, line in ipairs(lines) do if line.text:find(ns.L.SOURCE_GLOBAL, 1, true) then found = line.text end end
+  OK(found ~= nil and found:find("20", 1, true) ~= nil, "the tooltip names the global source and the number of reporters")
+
+  -- Passing on: once, after 5 to 60 seconds, only while sending, never twice.
+  Fresh()
+  Consent.SetToggle("global", "receive", true)
+  Consent.SetToggle("global", "send", true)
+  local delays = {}
+  Net.io.random = function(low, high) delays[#delays + 1] = low .. "-" .. high return 30 end
+  local wire = Wire({ Item(50, Const.LabelValue.spam) })
+  Deliver(wire)
+  EQ(delays[1], "5-60", "the delay is drawn from 5 to 60 seconds")
+  Advance(29)
+  EQ(#Take(), 0, "nothing is passed on before its delay")
+  Advance(2)
+  local relayed = Take()
+  EQ(#relayed, 1, "after the delay the report is passed on")
+  local passed = Open(relayed[1])
+  EQ(passed.items[1].hash, HashOf(50), "the same target")
+  EQ(passed.items[1].token, TokenOf(50), "the same anonymous token")
+  EQ(passed.items[1].mask, Const.LabelValue.spam, "the same labels")
+  EQ(passed.items[1].day, today, "the same day")
+  EQ(relayed[1].channel, "CHANNEL", "on the global channel")
+  Deliver(wire)
+  Deliver(Wire({ Item(50, Const.LabelValue.spam) }), "Dave Four")
+  Advance(70)
+  EQ(#Take(), 0, "the same report again, even from someone else, is never passed on a second time")
+  EQ(#delays, 1, "no second delay was even drawn")
+
+  -- Reports of several reporters about one target wait side by side.
+  Fresh()
+  Consent.SetToggle("global", "receive", true)
+  Consent.SetToggle("global", "send", true)
+  Net.io.random = function() return 5 end
+  Deliver(Wire({ { hash = HashOf(60), mask = 1, day = today, token = TokenOf(1) } }))
+  Deliver(Wire({ { hash = HashOf(60), mask = 1, day = today, token = TokenOf(2) } }), "Dave Four")
+  Advance(10)
+  local both = Take()
+  local tokens = {}
+  for _, message in ipairs(both) do
+    for _, item in ipairs(Open(message).items) do tokens[item.token] = true end
+  end
+  OK(tokens[TokenOf(1)] and tokens[TokenOf(2)], "two reporters' reports about one target are both passed on")
+
+  -- No passing on without sending, without a channel, or when the queue is full.
+  Fresh()
+  Consent.SetToggle("global", "receive", true)
+  Deliver(Wire({ Item(70) }))
+  Advance(70)
+  EQ(#Take(), 0, "a client that only receives passes nothing on")
+  Consent.SetToggle("global", "send", true)
+  Deliver(Wire({ Item(70) }))
+  Advance(70)
+  EQ(#Take(), 0, "and a report it already saw stays unpassed even when sending is switched on later")
+  channel = nil
+  Deliver(Wire({ Item(71) }))
+  channel = 7
+  Advance(70)
+  EQ(#Take(), 0, "a client that has not joined the channel passes nothing on")
+  local oldCap = Const.Community.relayQueueCap
+  Const.Community.relayQueueCap = 2
+  sendOk = false
+  for n = 80, 90 do Deliver(Wire({ Item(n) }), "Sender" .. string.char(65 + n % 20) .. " One") end
+  Advance(6)
+  EQ(Net.PendingCount(), 2, "a full queue stops more reports from being passed on")
+  Const.Community.relayQueueCap = oldCap
+  sendOk = true
+
+  -- Revoking withdraws what was reported on the global channel as well.
+  Fresh()
+  Consent.SetToggle("global", "send", true)
+  ns.Records.Save("Bad One", "ignore", { scam = true }, "c")
+  Net.Sync()
+  Advance(5)
+  Take()
+  Consent.Revoke()
+  Advance(5)
+  local withdrawn = Take()
+  EQ(#withdrawn, 1, "revoking sends one retraction to the global channel")
+  EQ(Open(withdrawn[1]).kind, "X1", "which is a retraction")
+  EQ(Consent.GlobalActive(), false, "and the global notice has to be confirmed again")
+  UnitName = nil
+end)
+
+-- --- Test mode: sample tooltips (section 6.6) ---------------------------------------------------------------------
+
+Group("Tooltip test mode", function()
+  local Tooltip = ns.Tooltip
+  local function Contains(text, needle, label)
+    OK(type(text) == "string" and text:find(needle, 1, true) ~= nil, label .. ": " .. tostring(text) .. " lacks " .. tostring(needle))
+  end
+  FreshDb()
+  Tooltip.SetTestMode(false)
+  EQ(Tooltip.TestMode(), false, "test mode is off at first")
+  Tooltip.SetTestMode(true)
+  EQ(Tooltip.TestMode(), true, "it can be turned on")
+  Tooltip.SetTestMode(false)
+  EQ(Tooltip.TestMode(), false, "and off")
+  EQ(Tooltip.SampleCount, 6, "there are six sample situations")
+
+  local function Texts(lines)
+    local list = {}
+    for _, line in ipairs(lines) do list[#list + 1] = line.text end
+    return table.concat(list, "\n")
+  end
+
+  -- Each sample looks like the real thing, and says it is a sample.
+  for index = 1, Tooltip.SampleCount do
+    local lines = Tooltip.SampleLinesAt(index)
+    OK(#lines >= 3, "sample " .. index .. " has a verdict, reasons and the sample line")
+    Contains(lines[1].text, "Blackbook: ", "sample " .. index .. " starts with the verdict like a real tooltip")
+    EQ(lines[#lines].text, ns.L.TT_TEST_BANNER, "sample " .. index .. " ends by saying it is sample data")
+  end
+  local ignore = Texts(Tooltip.SampleLinesAt(1))
+  Contains(ignore, ns.L.VERDICT_IGNORE, "the first sample is an ignore")
+  Contains(ignore, ns.L.LABEL_HARASSMENT, "with its reasons")
+  Contains(ignore, ns.L.SAMPLE_COMMENT_IGNORE, "and a comment")
+  Contains(Texts(Tooltip.SampleLinesAt(2)), ns.L.VERDICT_WARN, "the second is a warning")
+  local fromList = Texts(Tooltip.SampleLinesAt(3))
+  Contains(fromList, ns.L.SAMPLE_LIST_NAME, "the third comes from an imported list")
+  Contains(fromList, ns.L.SAMPLE_AUTHOR, "by someone")
+  local guild = Texts(Tooltip.SampleLinesAt(4))
+  Contains(guild, ns.L.SOURCE_GUILD, "the fourth is a guild flag")
+  Contains(guild, ns.L.TIER_2, "at tier 2")
+  local both = Texts(Tooltip.SampleLinesAt(5))
+  Contains(both, ns.L.SOURCE_GUILD, "the fifth shows the guild")
+  Contains(both, ns.L.SOURCE_FRIENDS, "and friends on lines of their own")
+  local global = Texts(Tooltip.SampleLinesAt(6))
+  Contains(global, ns.L.SOURCE_GLOBAL, "the sixth is a global flag")
+  Contains(global, ns.L.TIER_3, "at tier 3")
+
+  -- A player always gets the same sample; different players see different ones.
+  local seen, distinct = {}, 0
+  for _, name in ipairs({ "Aaa Bbb", "Ccc Ddd", "Eee Fff", "Ggg Hhh", "Iii Jjj", "Kkk Lll", "Mmm Nnn", "Ooo Ppp",
+    "Qqq Rrr", "Sss Ttt", "Uuu Vvv", "Www Xxx", "Yyy Zzz", "Abc Def", "Ghi Jkl", "Mno Pqr" }) do
+    local first, second = Texts(Tooltip.SampleLines(name)), Texts(Tooltip.SampleLines(name))
+    EQ(first, second, name .. " always gets the same sample")
+    EQ(Texts(Tooltip.SampleLines(string.upper(name))), first, "whatever the case")
+    if not seen[first] then seen[first] = true distinct = distinct + 1 end
+  end
+  OK(distinct >= 4, "different players get different samples (" .. distinct .. " of 6 among sixteen)")
+
+  -- Sample texts are not mixed up with a real record of the same name.
+  ns.Records.Save("Aaa Bbb", "ignore", { spam = true }, "a real comment")
+  OK(not Texts(Tooltip.SampleLines("Aaa Bbb")):find("a real comment", 1, true), "a real record does not leak into a sample")
+  ns.Records.Remove("Aaa Bbb")
 end)
 
 -- --- Summary -------------------------------------------------------------------

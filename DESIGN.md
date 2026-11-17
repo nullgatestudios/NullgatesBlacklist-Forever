@@ -125,7 +125,9 @@ Community/Aggregate.lua-- store per source, tiers, expiry, caps (pure given ns.d
 Community/Consent.lua  -- opt-in state, per-source switches, revoke and purge
 Community/Rules.lua    -- rules, the community verdict, hidden flags
 Community/Roster.lua   -- character friends and who is online (Battle.net friends are not read yet)
-Community/Net.lua      -- outbox, background sync, receiving and its checks
+Community/Envelope.lua -- the hourly scrambling of global channel messages (pure)
+Community/Global.lua   -- joining and leaving the global channel, hiding its notices
+Community/Net.lua      -- outbox, background sync, receiving and its checks, passing on
 Community/Global.lua   -- M9 only: channel, envelope cipher, relay
 Enforce/Chat.lua       -- one chat filter pipeline
 Enforce/Requests.lua   -- invite, duel, trade
@@ -237,6 +239,7 @@ A label set is stored as a table `{ [id] = true }` and transmitted as an integer
 | `community.global.send` / `.receive` | `false` | M9 |
 | `community.shareLabels` | all `true` except `private_dispute`, `other` | labels that may be reported |
 | `community.consentVersion` | `0` | disclosure version the user confirmed |
+| `community.globalConsentVersion` | `0` | version of the separate global channel notice the user confirmed |
 | `community.rules` | `{}` | list of community rules (section 8.5) |
 
 ---
@@ -288,9 +291,11 @@ All enforcement reads `Resolver.Verdict`.
 
 ### 6.5 Slash commands
 `/blackbook` and `/bb`:
-`(none)` toggle manager, `list`, `ignore <name>`, `warn <name>`, `remove <name>`, `setup` (opens the wizard), `test <ignore|warn|notice>` (a sample chat line with that verdict's icon), `check` (client feature report and a loopback test of the sharing connection), `minimap`, `lang de|en|auto`, `version` (prints the TOC version), `help`. The `ignore` and `warn` commands open the editor with the name prefilled.
+`(none)` toggle manager, `list`, `ignore <name>`, `warn <name>`, `remove <name>`, `setup` (opens the wizard), `test <ignore|warn|notice>` (a sample chat line with that verdict's icon), `test mode` (turns test mode on or off, see 6.6), `check` (client feature report and a loopback test of the sharing connection), `minimap`, `lang de|en|auto`, `version` (prints the TOC version), `help`. The `ignore` and `warn` commands open the editor with the name prefilled.
 
 ### 6.6 Display
+**Test mode.** Because few players can arrange real flagged players to look at, the Settings tab has a *Test mode* box (and `/bb test mode` does the same). While it is on, the tooltip of every other player shows a sample instead of the real data: a verdict header, reasons and comment as for a real record, or the lines of an imported list, or one line per community source (guild, friends, global, with tier and number of reporters). Six sample situations exist; the same player always gets the same one and different players get different ones, so hovering around shows them all. The last line says it is sample data. The player's own character is skipped, and a really flagged player also shows the sample, not the real record, so nothing real is mistaken for a sample or the other way round. Test mode is never saved: it ends at logout, so it cannot be forgotten.
+
 - Chat icon prefix for `warn` (alert icon) and `notice` (blue arrow); `ignore` is hidden by chat enforcement, so it needs no icon except in the manager and tooltip (red cross); when `hideChat` is off, the ignored player's messages carry the red cross instead.
 - Portrait overlay on the target frame: diagonal strike for `ignore`, corner icon for `warn` and `notice`. Update on `PLAYER_TARGET_CHANGED` and on bus changes. Look up the portrait defensively (the frame layout varies).
 - Tooltip lines for player units: verdict with icon, labels, comment (escape `|` as `||`), plus the sources for subscriptions (max three) and, for community data, the tier, the count and the sources (section 8.8).
@@ -443,16 +448,17 @@ The sender is used for these checks only and is **never stored**.
 - The disclosure has a version number. `community.consentVersion` must equal the current version for any toggle to take effect. If the disclosure text changes, bump the version, which forces a new confirmation and turns the toggles off until then.
 - A **preview** button shows the next batch that would be sent (labels and hashed values) before sending anything.
 
-### 8.10 Global channel (M9)
-Added only after Friends and Guild are reviewed and working.
+### 8.10 Global channel (built in 1.0.0-alpha.2)
+The global channel is the third source next to friends and guild. It has its own switches, store (`reports.global`), thresholds (8.3), rules and consent, and its data never counts towards friends or guild.
 
-- **Channel:** one fixed hidden custom channel with a constant name. The channel is joined only when `global.send` or `global.receive` is on, and left when both are off.
-- **Envelope:** the whole message body is transformed with a keystream derived from `hourBucket = floor(GetServerTime() / 3600)` and a constant string. Use a simple keyed stream (for example an LCG or xorshift seeded from a 32-bit hash of those inputs). The envelope is **obfuscation, not secrecy**: the key comes from public addon code and the hour, so a modified client can read everything. It limits casual harvesting and old logs, and makes reports from different hours unlinkable on the wire.
-- Receivers try the current and the previous hour, to cover clock skew and the hour boundary.
-- **Relay once:** a client that receives a valid, unseen report re-sends it after a random delay of 5 to 60 seconds, then remembers the token so it never relays it twice (a hop limit of one; no loops). A relay message carries exactly the same record format. The receiver never stores the original sender, and a relayed report cannot be tied to its origin.
-- **Rules:** use the `global` thresholds from 8.3; `global` rules require `minTier` of 3 or more; separate consent screen text stating that the global channel is public to all addon users and that anonymity here is limited to the data itself.
-- **Rate limits:** the same caps as 8.6, plus a global ceiling on messages per minute across all senders; silent drop above it.
-- **Aggregator seam:** `Report.Build` produces transport-agnostic batches, and `Aggregate.Add` accepts a `source` argument. A future aggregator is just another input with `source = "global"`. Nothing further is built for it now.
+- **Channel:** one fixed custom channel, `BlackbookGl` (`Const.GLOBAL_CHANNEL`). `Global.Sync` joins it while `global.send` or `global.receive` is on and leaves it when both are off; it runs on every change of the switches and a few seconds after the world loads. A join is checked after 2 seconds and retried up to three more times, 10 seconds apart. Once joined, the channel is removed from every chat window and its join, leave and notice messages are filtered out, so nothing is ever shown in chat. The addon fires `COMMUNITY_CHANGED` when the channel appears, so sending, which waits for it, can start.
+- **Own consent.** The global channel is public, so its switches need a notice of their own on top of the general one. The first click on a global switch shows a popup (`GLOBAL_NOTICE`) that says: the channel is public to every Blackbook user; the client also passes on reports it receives; only a hash, labels, a day number and an anonymous token are sent, never comments or the player's name; the scrambling is not secrecy; anonymity is limited to the data itself; global reports need many reporters and global rules only react from tier 3; it can be switched off at any time. Accepting sets `community.globalConsentVersion` (which also confirms the general notice) and turns that switch on. A raised `Const.GlobalConsentVersion` switches the global switches off until confirmed again. *Revoke and delete* withdraws both confirmations and retracts what was reported on the channel.
+- **Envelope (`Community/Envelope.lua`).** The message text is scrambled with a keystream derived from `hour = floor(serverTime / 3600)` and the constant `Const.EnvelopeSalt`: a 32-bit hash of the two seeds a linear congruential generator (exact in Lua 5.1 arithmetic), and each symbol of the message is moved along a 32-symbol printable alphabet (digits, a to f, `:`, `;`, `~` for the TAB, R, X, H and filler letters) by the next keystream number. The result is the same length as the report message (so at most 255 bytes), printable, and not a plain report on the wire. **It is obfuscation, not secrecy:** the key comes from this public code and the hour, so a modified client reads everything. A receiver tries the current hour, the one before (a message sent just before the hour turned) and the one after (a sender whose clock runs ahead), and takes the first that parses as a report; two hours away fails. This is one hour more than the original plan, for clock skew.
+- **Sending:** the global class is part of the same sync as guild and friends (`sent.global` remembers what was announced; switching a send switch on sends the whole backlog; changes are retracted and re-reported). It only sends while the channel is joined; the channel number is looked up at send time. Because everyone listens, global messages go out at most one every 2 seconds (`Limits.globalGap`), where guild and friends use half a second.
+- **Receiving:** a `CHAT_MSG_ADDON` message on a channel whose name is ours (the name arrives bare or as `5. BlackbookGl`) is accepted only while `global.receive` is on. It is unscrambled, parsed like any report and filed under `global`. Per-sender caps (30 records a minute, 600 an hour) apply as in 8.6, plus a **ceiling for all senders together** (`Limits.globalPerMinute`, 600 records a minute); anything above is dropped silently. The sender is used for the caps and never stored.
+- **Passing on, once:** a report seen for the first time is sent again to the channel after a random 5 to 60 seconds (`Limits.relayMin`, `relayMax`), in exactly the same record format, so it reaches players who were not listening. The reports seen are remembered in memory (up to 20,000), so a report is never passed on twice, which is what stops loops; a retraction is not passed on. A client only passes on while `global.send` is on and the channel is joined, and stops while 500 global messages already wait (checked when the report arrives and again when its delay ends). Queue slots are keyed by target hash **and token**, so reports of several reporters about one target wait side by side.
+- **Rules and thresholds:** the `global` column of 8.3. A global rule needs `minTier` 3 or more; the Rules tab moves the tier to 3 when *Global* is chosen, `Rules.Add` refuses lower, and the matcher enforces it again.
+- **Aggregator seam:** unchanged: `Report.Build` is transport-agnostic and `Aggregate.Add` takes a `source`.
 
 ---
 
@@ -469,9 +475,9 @@ Everything goes through `Widgets` (`Window`, `Button`, `TabButton`, `Checkbox`, 
   2. *Imported*: all subscription records, with the effective verdict per row; click to adopt into your own list.
   3. *Lists*: choose a subscription, set the verdict per label (`notice`, `warn`, `ignore`), remove the list (Shift-click).
   4. *Share*: export (list name, label selection, comments checkbox, Create code button with a read-only code box), import (paste box, Import and Clear buttons, a confirmation popup showing list name, author, size and date),  The code and paste boxes sit in a scroll frame (`Widgets.CodeBox`), because a long code in a plain multi-line box would draw over the widgets below it and steal their clicks. The export settings are saved as they are changed; typing is never overwritten by a refresh.
-  5. *Community*: the disclosure and its confirm button, send and receive switches for friends and guild (global shown as not available), the reasons that may be shared, a preview of what would be sent (hashes and labels, never names), a counter of held reports and queued messages, and *Revoke and delete* (with a confirmation).
+  5. *Community*: the disclosure and its confirm button, send and receive switches for friends, guild and global (the global ones ask for their own notice the first time, see 8.10), the reasons that may be shared, a preview of what would be sent (hashes and labels, never names), a counter of held reports and queued messages, and *Revoke and delete* (with a confirmation).
   6. *Rules*: the community rules (add one rule per chosen reason; Shift-click removes; a rule that ignores asks for confirmation) and the list of hidden flags (click to show again).
-  7. *Settings*: language, enforcement toggles (including the minimap button), the auto-reply choice (off, short, with reasons) with a preview of the sentence, and *Run setup again*.
+  7. *Settings*: language, enforcement toggles (including the minimap button), test mode (6.6), the auto-reply choice (off, short, with reasons) with a preview of the sentence, and *Run setup again*.
 - **Wizard** (first run, 4 pages, `setupDone`): welcome and language; what "ignore" does (with the hide-chat and decline switches); auto-reply; finish and minimap. It opens two seconds after login on the first run only. Closing it in any way (Finish, the close button, Escape) counts as done, but only after it has really been shown, so merely building the window cannot finish the setup. `/bb setup` and a button on the Settings tab open it again. It never switches sharing on or confirms the community notice. A separate page for community consent is reachable from the Community tab, not forced on first run.
 - **Minimap button:** left-click toggles the manager, drag repositions, tooltip shows the record count.
 - **Context menu:** add entries on player menus (unit frames, chat names, group, guild lists): *Ignore...*, *Warn...* when no record exists; *Edit...* and *Remove* when one does; *Adopt...* when only a subscription lists the player; and for a community-flagged player, *This flag is wrong*. Do nothing for the player's own character or for non-players.
@@ -532,7 +538,7 @@ Each milestone must load without Lua errors, work with `/reload`, and leave prev
 
 **M8: polish (0.8.0).** `Enforce/Reply` (with its control and preview line on the Settings tab), `UI/Wizard`, German locale completion (checked by test), settings migration tests, and `/bb check` so the sharing connection can be tested with one character. *Accept:* auto-reply obeys every rule in 6.4; first-run wizard appears once; the language switch works.
 
-**M9: global channel.** `Community/Global.lua` and its consent text. *Accept:* the hour-boundary overlap works; relays do not loop; global rules enforce the tier 3 minimum; rate limits drop floods.
+**M9: global channel (1.0.0-alpha.2).** `Community/Envelope.lua`, `Community/Global.lua`, the global class in `Net`, the global switches with their own notice, and test mode. *Accept:* the hour-boundary overlap works; a report is passed on once and never loops; global rules enforce the tier 3 minimum; rate limits and the all-senders ceiling drop floods; nothing is sent or filed without both notices; the channel is joined only while a switch is on; sample tooltips are clearly marked and never shown for real data.
 
 ---
 
@@ -565,6 +571,8 @@ For each delivery, the reviewer checks:
 - **Retraction trust.** Anyone who has seen a token can retract it from the source it came from. The effect is limited to that source and to one report.
 - **`C_EncodingUtil` signatures** are assumed (`CompressString(text)` returning a string, `DecompressString(text)`); the code verifies the round trip and falls back to the raw code, but a client where compression works differently simply never produces `BK1C` codes.
 - **Vietnamese** needs stacked diacritics; if the addon's sans-serif font lacks them, those letters will not display and the player should choose another language until the font is changed.
+- **Global channel API.** `JoinChannelByName` (or `JoinTemporaryChannel`), `GetChannelName`, `LeaveChannelByName` and the addon-message channel `CHANNEL` (with the channel number as the target and the channel name as the eighth event argument) are assumed; `/bb check` reports the first three. A joined custom channel takes a channel number, which may shift the numbers of the player's other channels. Joining may fail before the world is ready; it is retried. Addon messages on a channel are rate limited by the game, which the 2 second gap respects.
+- **The global channel is public.** Anyone can join it with a modified client, read every report and send junk. The defences are the consent notice, caps, the all-senders ceiling, the need for many reporters before a flag counts and the tier 3 minimum for rules; none of them can stop a determined flood, which is why global data on its own only ever produces a notice.
 - **Scroll frame template.** `UIPanelScrollFrameTemplate` is assumed for the code boxes; without it they fall back to a single-line edit box.
 
 ---

@@ -1,6 +1,7 @@
 -- Blackbook: the "Rules" tab (sections 8.5, 8.8 and 9): what community reports
 -- mean for you. Reports only add a notice until a rule says more. Rules are per
--- source, so friends and guild are never mixed with each other or with global.
+-- source, so friends, guild and global are never mixed. A global rule only reacts
+-- from tier 3.
 -- Below the rules are the flags you hid with "This flag is wrong".
 local _, ns = ...
 
@@ -138,7 +139,11 @@ local function Build(content)
   state.source = Widgets.RadioGroup(content, {
     { value = "friends", text = Text("SOURCE_FRIENDS") },
     { value = "guild", text = Text("SOURCE_GUILD") },
-  })
+    { value = "global", text = Text("SOURCE_GLOBAL") },
+  }, function(value)
+    -- A global rule only reacts from tier 3, so move the tier there.
+    if value == "global" and (state.tier:GetValue() or 0) < 3 then state.tier:SetValue(3) end
+  end)
   state.tier = Widgets.RadioGroup(content, {
     { value = 1, text = "1" }, { value = 2, text = "2" },
     { value = 3, text = "3" }, { value = 4, text = "4" },

@@ -50,6 +50,15 @@ local function Build(content)
     controls[path] = check
   end
 
+  -- Test mode shows sample tooltips on other players; it is never saved.
+  local testMode = Widgets.Checkbox(content, Text("OPT_TEST_MODE"), function(self)
+    local on = self:GetChecked() and true or false
+    ns.Tooltip.SetTestMode(on)
+    Print(Text(on and "MSG_TEST_MODE_ON" or "MSG_TEST_MODE_OFF"))
+  end)
+  if not testMode then return nil end
+  Place(testMode, 0, 28)
+
   Place(Widgets.Label(content, Text("OPT_REPLY")), 4, 24)
   local reply = ns.ReplyControl.Create(content, Place)
   if not reply then return nil end
@@ -64,6 +73,7 @@ local function Build(content)
       for path, check in pairs(controls) do
         check:SetChecked(Settings.Get(path) and true or false)
       end
+      testMode:SetChecked(ns.Tooltip.TestMode())
       reply.Refresh()
     end,
   }

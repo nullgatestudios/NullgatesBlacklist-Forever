@@ -313,7 +313,7 @@ ns.Settings.Init()
 -- --- Slash commands -----------------------------------------------------------
 
 local out = Run("help")
-Equals(#out, 13, "help prints thirteen lines")
+Equals(#out, 14, "help prints fourteen lines")
 Contains(out[1], ns.L.HELP_HEADER, "help header")
 Contains(out[2], Const.SLASH_BLACKBOOK_SHORT, "help lines use the short command")
 
@@ -971,8 +971,8 @@ do
   local community = TabContent(function(f) return f.kind == "Button" and f.text == ns.L.COMM_CONFIRM end)
   Check(community ~= nil, "the community tab is built")
   local sends, receives = Checks(community, ns.L.COMM_SEND), Checks(community, ns.L.COMM_RECEIVE)
-  Equals(#sends, 2, "friends and guild each have a send switch")
-  Equals(#receives, 2, "and a receive switch")
+  Equals(#sends, 3, "friends, guild and global each have a send switch")
+  Equals(#receives, 3, "and a receive switch")
   Equals(sends[1].enabled, false, "the switches are disabled before the notice is confirmed")
   local friendsSend, guildSend, friendsReceive, guildReceive = sends[1], sends[2], receives[1], receives[2]
   guildSend:SetChecked(true)
@@ -1298,6 +1298,154 @@ do
   printed = {}
   RunTimers(3)
   Contains(LastPrinted(), string.format(ns.L.CHECK_LOOPBACK_FAIL, ns.L.CHECK_NOECHO), "silence fails the test with its reason")
+end
+
+-- --- Global channel and test mode through the real interface -----------------------------------------------
+
+do
+  local function RunTimers(maxDelay)
+    local keep = {}
+    for _, timer in ipairs(smokeTimers) do
+      if timer.delay <= maxDelay then timer.fn() else keep[#keep + 1] = timer end
+    end
+    smokeTimers = keep
+  end
+  local function TabContent(predicate)
+    for _, child in ipairs(manager.children) do
+      if predicate(child) or #Find(child, predicate) > 0 then return child end
+    end
+    return nil
+  end
+  local function Checks(root, text)
+    return Find(root, function(f) return f.kind == "CheckButton" and f.text == text end)
+  end
+  local function Button(root, text)
+    return Find(root, function(f) return f.kind == "Button" and f.text == text end)[1]
+  end
+
+  -- A client that has custom channels.
+  local channel
+  JoinChannelByName = function(name) channel = name end
+  LeaveChannelByName = function(name) if channel == name then channel = nil end end
+  GetChannelName = function(name) if channel == name then return 7, name end return 0 end
+
+  Run("")
+  manager = _G.CurrentBlackbookManager
+  Equals(ns.Consent.Active(), false, "(nothing is confirmed at this point)")
+
+  -- The global switches ask for their own confirmation first.
+  Click(ButtonByText(ns.L.TAB_COMMUNITY))
+  local community = TabContent(function(f) return f.kind == "Button" and f.text == ns.L.COMM_CONFIRM end)
+  local sends, receives = Checks(community, ns.L.COMM_SEND), Checks(community, ns.L.COMM_RECEIVE)
+  Equals(#sends, 3, "friends, guild and global each have a send switch")
+  Equals(#receives, 3, "and a receive switch")
+  local globalSend, globalReceive = sends[3], receives[3]
+  Equals(globalSend.enabled, true, "the global switches can be clicked before anything is confirmed")
+  Equals(sends[2].enabled, false, "(while the guild ones cannot)")
+  smokePopups = 0
+  globalSend:SetChecked(true)
+  Click(globalSend)
+  Equals(smokePopups, 1, "turning on a global switch shows a notice")
+  Equals(smokeLastPopup.which, "BLACKBOOK_CONFIRM_GLOBAL", "Blackbook's own popup")
+  Equals(smokeLastPopup.a, ns.L.GLOBAL_NOTICE, "with the notice of the global channel")
+  Equals(globalSend.checked, false, "the box does not stay ticked")
+  Equals(ns.Settings.Get("community.global.send"), false, "and nothing was switched on")
+  Equals(ns.Consent.GlobalActive(), false, "nor confirmed")
+  Equals(channel, nil, "and no channel was joined")
+  Contains(ns.Locale.Tables.en.GLOBAL_NOTICE, "is public", "the notice says the channel is public")
+
+  StaticPopupDialogs.BLACKBOOK_CONFIRM_GLOBAL.OnAccept()
+  Equals(ns.Consent.GlobalActive(), true, "accepting confirms the global notice")
+  Equals(ns.Consent.Active(), true, "and the general one")
+  Equals(ns.Settings.Get("community.global.send"), true, "and switches the box on")
+  Equals(ns.Settings.Get("community.global.receive"), false, "only that one")
+  Equals(ns.Settings.Get("community.friends.send"), false, "friends stay off")
+  Equals(ns.Settings.Get("community.guild.send"), false, "and so does the guild")
+  Equals(channel, "BlackbookGl", "the channel is joined")
+  RunTimers(2)
+  Equals(globalSend.checked, true, "the switch shows as on")
+
+  -- A second click needs no new notice.
+  smokePopups = 0
+  globalReceive:SetChecked(true)
+  Click(globalReceive)
+  Equals(smokePopups, 0, "the notice is shown only once")
+  Equals(ns.Settings.Get("community.global.receive"), true, "the receive switch works")
+
+  -- Switching both off leaves the channel.
+  globalSend:SetChecked(false)
+  Click(globalSend)
+  Equals(channel, "BlackbookGl", "still joined while receiving is on")
+  globalReceive:SetChecked(false)
+  Click(globalReceive)
+  Equals(channel, nil, "with both off the channel is left")
+
+  -- The Rules tab: a global rule moves the tier to 3.
+  Click(ButtonByText(ns.L.TAB_RULES))
+  local rules = TabContent(function(f) return f.kind == "Button" and f.text == ns.L.RULES_ADD_BUTTON end)
+  Check(rules ~= nil, "the rules tab is there")
+  Click(Checks(rules, ns.L.SOURCE_GUILD)[1])
+  Equals(Checks(rules, "2")[1].checked, true, "the tier starts at 2")
+  Click(Checks(rules, ns.L.SOURCE_GLOBAL)[1])
+  Equals(Checks(rules, "3")[1].checked, true, "choosing global moves the tier to 3")
+  Equals(Checks(rules, "2")[1].checked, false, "away from 2")
+  local scamBox = Checks(rules, ns.L.LABEL_SCAM)[1]
+  scamBox:SetChecked(true)
+  Click(scamBox)
+  Click(Button(rules, ns.L.RULES_ADD_BUTTON))
+  local rule = ns.Rules.List()[#ns.Rules.List()]
+  Equals(rule and (rule.source .. "/" .. rule.minTier), "global/3", "a global rule is created at tier 3")
+  Click(Checks(rules, "2")[1])
+  Click(Button(rules, ns.L.RULES_ADD_BUTTON))
+  Equals(#ns.Rules.List(), 1, "a global rule at tier 2 is refused")
+  ns.Rules.Remove(1)
+
+  -- Test mode: sample tooltips on other players.
+  Click(ButtonByText(ns.L.TAB_SETTINGS))
+  local settings = TabContent(function(f) return f.kind == "CheckButton" and f.text == ns.L.OPT_TEST_MODE end)
+  Check(settings ~= nil, "the settings tab has a test mode switch")
+  local testBox = Checks(settings, ns.L.OPT_TEST_MODE)[1]
+  Equals(ns.Tooltip.TestMode(), false, "test mode is off at first")
+  smokeTarget = { "Plain", "Player" }
+  GameTooltip.lines = {}
+  tooltipCallback(GameTooltip)
+  Equals(#GameTooltip.lines, 0, "a player with no verdict gets nothing")
+  printed = {}
+  testBox:SetChecked(true)
+  Click(testBox)
+  Equals(ns.Tooltip.TestMode(), true, "ticking the box turns test mode on")
+  Contains(LastPrinted(), ns.L.MSG_TEST_MODE_ON, "and says so")
+  GameTooltip.lines = {}
+  tooltipCallback(GameTooltip)
+  Check(#GameTooltip.lines >= 3, "the same player now gets a sample tooltip")
+  Contains(GameTooltip.lines[1], "Blackbook: ", "that starts like a real one")
+  Equals(GameTooltip.lines[#GameTooltip.lines], ns.L.TT_TEST_BANNER, "and ends by saying it is a sample")
+  smokeTarget = { "Self", "Char" }
+  GameTooltip.lines = {}
+  tooltipCallback(GameTooltip)
+  Equals(#GameTooltip.lines, 0, "your own character gets no sample")
+  ns.Records.Save("Real Flagged", "ignore", { spam = true }, "a real comment")
+  smokeTarget = { "Real", "Flagged" }
+  GameTooltip.lines = {}
+  tooltipCallback(GameTooltip)
+  local joined = table.concat(GameTooltip.lines, "\n")
+  Check(joined:find(ns.L.TT_TEST_BANNER, 1, true) ~= nil and not joined:find("a real comment", 1, true),
+    "in test mode even a really flagged player shows the sample, not the real record")
+  ns.Records.Remove("real flagged")
+
+  -- /bb test mode toggles it and the box follows.
+  printed = {}
+  Run("test mode")
+  Equals(ns.Tooltip.TestMode(), false, "/bb test mode turns it off again")
+  Contains(LastPrinted(), ns.L.MSG_TEST_MODE_OFF, "and says so")
+  Equals(testBox.checked, false, "and the box on the settings tab follows")
+  Run("test mode")
+  Equals(ns.Tooltip.TestMode(), true, "and on again")
+  Run("test mode")
+  smokeTarget = nil
+  GameTooltip.lines = {}
+  Run("")
+  JoinChannelByName, LeaveChannelByName, GetChannelName = nil, nil, nil
 end
 
 -- Context menu: the player menus are hooked, and a hook adds the entries.

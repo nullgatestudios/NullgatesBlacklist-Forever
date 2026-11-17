@@ -1,7 +1,8 @@
 -- Blackbook: the "Community" tab (sections 8.9 and 9): the disclosure the
 -- player must confirm, the send and receive switches for friends and guild, the
 -- reasons that may be shared, a preview of what would be sent, and "revoke and
--- delete". The global channel is shown as not available and kept apart.
+-- delete". The global channel has its own row and its own confirmation, and is
+-- kept apart from friends and guild.
 -- Widgets are placed from the top by one running offset so nothing overlaps.
 local _, ns = ...
 
@@ -22,7 +23,8 @@ local POPUP = "BLACKBOOK_CONFIRM_REVOKE"
 local FULL_WIDTH = 630
 
 -- The sources that can be switched on now, in display order.
-local SOURCES = { "friends", "guild" }
+local SOURCES = { "friends", "guild", "global" }
+local GLOBAL_POPUP = "BLACKBOOK_CONFIRM_GLOBAL"
 
 local function LabelSummary(selection)
   local count = 0
@@ -34,6 +36,23 @@ end
 local function Revoke()
   Consent.Revoke()
   Print(Text("COMM_REVOKED"))
+end
+
+-- The global channel is public, so it asks once with a notice of its own before a
+-- switch can be turned on. run() is what to do when the player agrees; without a
+-- popup system nothing is switched on.
+local function AskGlobal(run)
+  if type(StaticPopupDialogs) ~= "table" or type(StaticPopup_Show) ~= "function" then return end
+  StaticPopupDialogs[GLOBAL_POPUP] = {
+    text = "%s",
+    button1 = Text("COMM_CONFIRM"),
+    button2 = Text("COMM_REVOKE_NO"),
+    OnAccept = run,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+  }
+  StaticPopup_Show(GLOBAL_POPUP, Text("GLOBAL_NOTICE"))
 end
 
 -- Asks before revoking; without a popup system it just revokes.
@@ -70,9 +89,17 @@ local function Build(content)
     for _, direction in ipairs({ "send", "receive" }) do
       local check = Widgets.Checkbox(content, Text(direction == "send" and "COMM_SEND" or "COMM_RECEIVE"),
         function(self)
-          if not Consent.SetToggle(source, direction, self:GetChecked() and true or false) then
+          local wanted = self:GetChecked() and true or false
+          if wanted and source == "global" and not Consent.GlobalActive() then
+            -- First time: show the notice; the switch goes on only if it is accepted.
             self:SetChecked(false)
+            AskGlobal(function()
+              Consent.ConfirmGlobal()
+              Consent.SetToggle(source, direction, true)
+            end)
+            return
           end
+          if not Consent.SetToggle(source, direction, wanted) then self:SetChecked(false) end
         end)
       if not check then return nil end
       state.switches[#state.switches + 1] = { source = source, direction = direction, check = check }
@@ -125,9 +152,9 @@ local function Build(content)
     state.switches[index * 2].check:SetPoint("TOPLEFT", content, "TOPLEFT", 340, -y)
     y = y + 28
   end
-  local global = Widgets.Label(content, Text("COMM_GLOBAL_SOON"), "GameFontDisableSmall")
-  global:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -(y + 4))
-  y = y + 24
+  local note = Widgets.Label(content, Text("COMM_GLOBAL_NOTE"), "GameFontDisableSmall")
+  note:SetPoint("TOPLEFT", content, "TOPLEFT", 4, -(y + 2))
+  y = y + 20
 
   -- Reasons, preview and revoke.
   local labelsLabel = Widgets.Label(content, Text("COMM_LABELS"), "GameFontHighlightSmall")
@@ -150,7 +177,8 @@ local function Build(content)
     state.consentStatus:SetText(Text(active and "COMM_CONFIRMED" or "COMM_NOT_CONFIRMED"))
     for _, switch in ipairs(state.switches) do
       switch.check:SetChecked(Consent.Allows(switch.source, switch.direction))
-      Widgets.SetEnabled(switch.check, active)
+      -- The global switches stay clickable: their first click shows their own notice.
+      Widgets.SetEnabled(switch.check, active or switch.source == "global")
     end
     local tokens, targets = Aggregate.Counts()
     state.status:SetText(string.format(Text("COMM_STATUS"), tokens, targets, Net.PendingCount()))
