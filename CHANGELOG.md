@@ -1,8 +1,16 @@
 # Changelog
 
-All notable changes to Blackbook are listed here. The format follows Keep a Changelog and the project uses Semantic Versioning.
+All notable changes to Nullgate's Blacklist (formerly Blackbook) are listed here. The format follows Keep a Changelog and the project uses Semantic Versioning.
 
 ## [Unreleased]
+
+## [1.0.0-alpha.3] - 2026-11-18
+### Changed
+- **Blackbook is now Nullgate's Blacklist - Forever**, part of the Nullgate addon suite.
+- **This is a fresh start:** the addon folder is now `NullgatesBlacklist-Forever`, so your Blackbook list, imported lists and settings are not carried over. The setup wizard runs again on first login.
+- The slash commands are now `/nbl` and `/blacklist`. `/blackbook` and `/bb` no longer work.
+- Delete the old `Blackbook` folder from `Interface\AddOns`. If it is still installed, you are offered a button to disable it, because running both makes everything happen twice.
+- Sharing with older versions keeps working: list codes, friends and guild reports and the global channel are unchanged.
 
 ## [1.0.0-alpha.2] - 2026-11-16
 ### Added

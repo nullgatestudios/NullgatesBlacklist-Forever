@@ -1,4 +1,4 @@
--- Blackbook: pure-module tests (DESIGN.md section 11).
+-- Nullgate's Blacklist: pure-module tests (DESIGN.md section 11).
 --
 -- Run from the repository root:
 --     lua5.1 tests/run.lua      (lua tests/run.lua works too)
@@ -28,9 +28,9 @@ local root = scriptDir:match("^(.*)[/\\][^/\\]*$") or "."
 
 local ns = {}
 local function Load(relative)
-  local path = root .. "/Blackbook/" .. relative
+  local path = root .. "/NullgatesBlacklist-Forever/" .. relative
   local chunk = assert(loadfile(path), "cannot load " .. path)
-  chunk("Blackbook", ns)
+  chunk("NullgatesBlacklist-Forever", ns)
 end
 
 Load("Locale/Locale.lua")
@@ -225,7 +225,7 @@ end)
 
 Group("Settings.Init", function()
   local Settings = ns.Settings
-  BlackbookDB = nil
+  NullgatesBlacklistDB = nil
   local db = Settings.Init()
   EQ(db.version, 1, "fresh database version")
   EQ(db.settings.language, "auto", "language default")
@@ -252,9 +252,9 @@ Group("Settings without math.randomseed", function()
   local saved = math.randomseed
   math.randomseed = nil
   local savedSettings, savedDb = ns.Settings, ns.db
-  local chunk = assert(loadfile(root .. "/Blackbook/Core/Settings.lua"))
-  chunk("Blackbook", ns)
-  BlackbookDB = nil
+  local chunk = assert(loadfile(root .. "/NullgatesBlacklist-Forever/Core/Settings.lua"))
+  chunk("NullgatesBlacklist-Forever", ns)
+  NullgatesBlacklistDB = nil
   local ok, db = pcall(ns.Settings.Init)
   math.randomseed = saved
   OK(ok, "Init works when math.randomseed is missing")
@@ -264,7 +264,7 @@ end)
 
 Group("Settings migration", function()
   local Settings = ns.Settings
-  BlackbookDB = {
+  NullgatesBlacklistDB = {
     version = 1,
     records = { ["a b"] = { name = "A B" } },
     settings = { language = "de" },
@@ -275,12 +275,12 @@ Group("Settings migration", function()
   EQ(db.settings.autoDecline, true, "missing value filled")
   EQ(db.records["a b"].name, "A B", "existing record kept")
 
-  BlackbookDB = { records = {} }
+  NullgatesBlacklistDB = { records = {} }
   db = Settings.Init()
   EQ(db.version, 1, "unversioned data migrated")
   EQ(type(db.community and db.community.reports), "table", "community tables created by migration")
 
-  BlackbookDB = { version = 99, settings = { language = "de" } }
+  NullgatesBlacklistDB = { version = 99, settings = { language = "de" } }
   local state
   db, state = Settings.Init()
   EQ(db.version, 99, "newer data left alone")
@@ -293,7 +293,7 @@ end)
 Group("Settings accessors", function()
   local Settings = ns.Settings
   local Const = ns.Const
-  BlackbookDB = nil
+  NullgatesBlacklistDB = nil
   Settings.Init()
   local fired = 0
   ns.Events:On(Const.Events.SETTINGS_CHANGED, function() fired = fired + 1 end)
@@ -312,7 +312,7 @@ end)
 Group("Records", function()
   local Records = ns.Records
   local Const = ns.Const
-  BlackbookDB = nil
+  NullgatesBlacklistDB = nil
   ns.Settings.Init()
   local changed = 0
   ns.Events:On(Const.Events.RECORDS_CHANGED, function() changed = changed + 1 end)
@@ -368,7 +368,7 @@ end)
 -- --- Resolver (section 6.3) ----------------------------------------------------
 
 local function FreshDb()
-  BlackbookDB = nil
+  NullgatesBlacklistDB = nil
   ns.Settings.Init()
   return ns.db
 end
@@ -711,9 +711,9 @@ end)
 
 Group("Context menu without the menu API", function()
   -- A fresh copy so the registered flag of the module above does not hide it.
-  local chunk = assert(loadfile(root .. "/Blackbook/UI/ContextMenu.lua"))
+  local chunk = assert(loadfile(root .. "/NullgatesBlacklist-Forever/UI/ContextMenu.lua"))
   local saved = ns.ContextMenu
-  chunk("Blackbook", ns)
+  chunk("NullgatesBlacklist-Forever", ns)
   printed = {}
   EQ(ns.ContextMenu.Register(), false, "no Menu API: register reports failure")
   OK(printed[1] and printed[1]:find(ns.L.MSG_NO_MENU, 1, true), "a notice explains it")
@@ -995,7 +995,7 @@ Group("Portrait", function()
 
   target = { first = "Marked", last = "Target" }
   EQ(Portrait.Update(), nil, "a player without a flag shows nothing")
-  local overlay = created.BlackbookTargetMark
+  local overlay = created.NullgateBlacklistTargetMark
   OK(overlay ~= nil and not overlay:IsShown(), "the overlay exists and is hidden")
 
   ns.Records.Save("Marked Target", "ignore", { scam = true }, "x")
@@ -1055,8 +1055,8 @@ end)
 -- --- Tooltip (section 6.6) -------------------------------------------------------------
 
 local function Reload(path)
-  local chunk = assert(loadfile(root .. "/Blackbook/" .. path))
-  chunk("Blackbook", ns)
+  local chunk = assert(loadfile(root .. "/NullgatesBlacklist-Forever/" .. path))
+  chunk("NullgatesBlacklist-Forever", ns)
 end
 
 Group("Tooltip lines", function()
@@ -1067,7 +1067,7 @@ Group("Tooltip lines", function()
   ns.Records.Save("Tip Target", "ignore", { harassment = true, scam = true }, 'He said "hi" | bye')
   local lines = Tooltip.Lines("Tip Target")
   EQ(#lines, 3, "header, labels, comment")
-  OK(lines[1].text:find("Blackbook: ", 1, true) and lines[1].text:find(L.VERDICT_IGNORE, 1, true), "header names the verdict")
+  OK(lines[1].text:find("Nullgate's Blacklist: ", 1, true) and lines[1].text:find(L.VERDICT_IGNORE, 1, true), "header names the verdict")
   OK(lines[1].text:find("|cffe61a1a", 1, true), "header carries the verdict icon")
   EQ(lines[1].color[1], 1, "header uses the verdict colour")
   EQ(lines[2].text, L.LABEL_HARASSMENT .. ", " .. L.LABEL_SCAM, "labels line")
@@ -2516,12 +2516,12 @@ Group("Locale parity", function()
   EQ(#blank, 0, "no German text is empty")
 
   -- Every key the code asks for exists, so a typo is caught here and not in game.
-  local toc = assert(io.open(root .. "/Blackbook/Blackbook.toc", "rb"))
+  local toc = assert(io.open(root .. "/NullgatesBlacklist-Forever/NullgatesBlacklist-Forever.toc", "rb"))
   local tocText = toc:read("*a")
   toc:close()
   local unknown, seen = {}, {}
   for file in tocText:gmatch("([%w/_]+%.lua)") do
-    local handle = assert(io.open(root .. "/Blackbook/" .. file, "rb"))
+    local handle = assert(io.open(root .. "/NullgatesBlacklist-Forever/" .. file, "rb"))
     local source = handle:read("*a")
     handle:close()
     if not file:find("^Locale/") then
@@ -2545,7 +2545,7 @@ end)
 Group("Settings migration", function()
   local Settings = ns.Settings
   local function Run(saved)
-    BlackbookDB = saved
+    NullgatesBlacklistDB = saved
     local db, state = Settings.Init()
     return db, state
   end
@@ -2563,7 +2563,7 @@ Group("Settings migration", function()
   EQ(db.settings.community.consentVersion, 0, "and nothing is confirmed")
 
   local id, secret = db.settings.export.id, db.community.install.secret
-  Run(BlackbookDB)
+  Run(NullgatesBlacklistDB)
   EQ(ns.db.settings.export.id, id, "starting again keeps the export id")
   EQ(ns.db.community.install.secret, secret, "and the install secret")
 
@@ -2600,7 +2600,7 @@ Group("Settings migration", function()
   EQ(ns.db, nil, "and not loaded, so nothing can modify it")
   EQ(newer.settings.hideChat, "stay", "it is untouched")
   EQ(newer.version, 99, "and keeps its version")
-  BlackbookDB = nil
+  NullgatesBlacklistDB = nil
   Settings.Init()
 end)
 
@@ -2772,7 +2772,7 @@ Group("Reply", function()
   UnitName = nil
 end)
 
--- --- Net: the self test behind "/bb check" ---------------------------------------------------------------
+-- --- Net: the self test behind "/nbl check" ---------------------------------------------------------------
 
 Group("Net self test", function()
   local Net, Const = ns.Net, ns.Const
@@ -3041,9 +3041,9 @@ Group("Choice picker", function()
   MenuResponse = nil
 
   -- Window names stay free when a window is rebuilt.
-  EQ(Widgets.FrameName("BlackbookTestWindow"), "BlackbookTestWindow", "the first window keeps the plain name")
-  EQ(Widgets.FrameName("BlackbookTestWindow"), "BlackbookTestWindow2", "a rebuilt one gets a new name")
-  EQ(Widgets.FrameName("BlackbookTestWindow"), "BlackbookTestWindow3", "and again")
+  EQ(Widgets.FrameName("NullgateBlacklistTestWindow"), "NullgateBlacklistTestWindow", "the first window keeps the plain name")
+  EQ(Widgets.FrameName("NullgateBlacklistTestWindow"), "NullgateBlacklistTestWindow2", "a rebuilt one gets a new name")
+  EQ(Widgets.FrameName("NullgateBlacklistTestWindow"), "NullgateBlacklistTestWindow3", "and again")
 end)
 
 -- --- The look: the game's own templates (section 9) ----------------------------------------------------------
@@ -3126,7 +3126,7 @@ Group("Game-style widgets", function()
 
   -- Windows: the standard framed panel.
   UIParent = Pane("Frame")
-  local window = Widgets.Window("BlackbookWindowTest", 400, 300, "Title")
+  local window = Widgets.Window("NullgateBlacklistWindowTest", 400, 300, "Title")
   EQ(window.template, "BasicFrameTemplateWithInset", "a window is the game's framed panel")
   EQ(window.role, "window", "marked as a window")
   OK(window.scripts.OnDragStart ~= nil and window.scripts.OnDragStop ~= nil, "it can be dragged")
@@ -3141,7 +3141,7 @@ Group("Game-style widgets", function()
     pane.TitleContainer = { TitleText = Pane("FontString") }
     return pane
   end
-  local older = Widgets.Window("BlackbookWindowTest2", 400, 300, "Old style")
+  local older = Widgets.Window("NullgateBlacklistWindowTest2", 400, 300, "Old style")
   EQ(older.TitleContainer.TitleText.text, "Old style", "the title goes into the template's title text")
   older:SetTitle("Changed")
   EQ(older.TitleContainer.TitleText.text, "Changed", "and can change")
@@ -3152,7 +3152,7 @@ Group("Game-style widgets", function()
   EQ(Widgets.Button(parent, "x", 10), nil, "no button template: nil")
   EQ(Widgets.Checkbox(parent, "x"), nil, "no checkbox template: nil")
   EQ(Widgets.InputBox(parent, 10, 5), nil, "no input template: nil")
-  EQ(Widgets.Window("BlackbookWindowTest3", 10, 10, "x"), nil, "no window template: nil")
+  EQ(Widgets.Window("NullgateBlacklistWindowTest3", 10, 10, "x"), nil, "no window template: nil")
   CreateFrame = savedCreate
 end)
 
@@ -3162,7 +3162,7 @@ Group("All languages", function()
   local EXPECTED = { "en", "zh", "es", "fr", "pt", "ru", "id", "de", "ja", "tr", "vi", "ko", "it", "pl", "uk" }
 
   -- The language files in the order the TOC loads them.
-  local toc = assert(io.open(root .. "/Blackbook/Blackbook.toc", "rb"))
+  local toc = assert(io.open(root .. "/NullgatesBlacklist-Forever/NullgatesBlacklist-Forever.toc", "rb"))
   local tocText = toc:read("*a")
   toc:close()
   local files = {}
@@ -3173,8 +3173,8 @@ Group("All languages", function()
 
   -- Load the whole set into a table of its own, exactly as the client does.
   local all = {}
-  assert(loadfile(root .. "/Blackbook/Locale/Locale.lua"))("Blackbook", all)
-  for _, file in ipairs(files) do assert(loadfile(root .. "/Blackbook/" .. file))("Blackbook", all) end
+  assert(loadfile(root .. "/NullgatesBlacklist-Forever/Locale/Locale.lua"))("NullgatesBlacklist-Forever", all)
+  for _, file in ipairs(files) do assert(loadfile(root .. "/NullgatesBlacklist-Forever/" .. file))("NullgatesBlacklist-Forever", all) end
   EQ(table.concat(all.Locale.Order, ","), table.concat(EXPECTED, ","), "the languages, in the order they are offered")
 
   local en = all.Locale.Tables.en
@@ -3209,9 +3209,9 @@ Group("All languages", function()
       -- where much of the text equals English was probably not translated.
       OK(untranslated < 25, code .. " is translated, not copied from English (" .. untranslated .. " identical)")
       -- Commands the player types must survive translation untouched.
-      for _, command in ipairs({ "/bb help", "/bb check", "/bb setup", "/bb test", "/bb lang", "/bb version" }) do
-        local key = ({ ["/bb help"] = "MSG_LOADED", ["/bb check"] = "HELP_CHECK", ["/bb setup"] = "HELP_SETUP",
-          ["/bb test"] = "HELP_TEST", ["/bb lang"] = "HELP_LANG", ["/bb version"] = "HELP_VERSION" })[command]
+      for _, command in ipairs({ "/nbl help", "/nbl check", "/nbl setup", "/nbl test", "/nbl lang", "/nbl version" }) do
+        local key = ({ ["/nbl help"] = "MSG_LOADED", ["/nbl check"] = "HELP_CHECK", ["/nbl setup"] = "HELP_SETUP",
+          ["/nbl test"] = "HELP_TEST", ["/nbl lang"] = "HELP_LANG", ["/nbl version"] = "HELP_VERSION" })[command]
         OK(text[key]:find(command, 1, true) ~= nil, code .. " keeps the command " .. command)
       end
       OK(text.HELP_TEST:find("<ignore|warn|notice>", 1, true) ~= nil, code .. " keeps the words of the test command")
@@ -3810,7 +3810,7 @@ Group("Tooltip test mode", function()
   for index = 1, Tooltip.SampleCount do
     local lines = Tooltip.SampleLinesAt(index)
     OK(#lines >= 3, "sample " .. index .. " has a verdict, reasons and the sample line")
-    Contains(lines[1].text, "Blackbook: ", "sample " .. index .. " starts with the verdict like a real tooltip")
+    Contains(lines[1].text, "Nullgate's Blacklist: ", "sample " .. index .. " starts with the verdict like a real tooltip")
     EQ(lines[#lines].text, ns.L.TT_TEST_BANNER, "sample " .. index .. " ends by saying it is sample data")
   end
   local ignore = Texts(Tooltip.SampleLinesAt(1))

@@ -1,3 +1,5 @@
+> **Note:** Blackbook was renamed to **Nullgate's Blacklist - Forever** in 1.0.0-alpha.3 (folder `NullgatesBlacklist-Forever`, saved variable `NullgatesBlacklistDB`, commands `/nbl` and `/blacklist`). This document still uses the old name; the wire names (`BK1`, `BKC`, `BlackbookGl` and the salts) are unchanged on purpose.
+
 # Blackbook addon: design document
 
 Status: v1 draft for implementation. The addon is named **Blackbook**; every fixed name lives in `Core/Const.lua`. A rename touches that file and the addon folder and TOC file names, nothing else (the packaging script reads the name from the TOC).

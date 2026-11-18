@@ -1,0 +1,68 @@
+## Interface: 16001
+## Title: |cff00c0ffNullgate's Blacklist|r - |cffffd100Forever|r
+## Notes: Personal blocklist with warnings, chat and request enforcement, and list sharing.
+## Author: Nullgate Studios
+## Version: 1.0.0-alpha.3
+## X-Curse-Project-ID: 1811465
+## IconTexture: Interface/AddOns/NullgatesBlacklist-Forever/icon.tga
+## SavedVariables: NullgatesBlacklistDB
+
+Locale/Locale.lua
+Locale/enUS.lua
+Locale/zhCN.lua
+Locale/esES.lua
+Locale/frFR.lua
+Locale/ptBR.lua
+Locale/ruRU.lua
+Locale/idID.lua
+Locale/deDE.lua
+Locale/jaJP.lua
+Locale/trTR.lua
+Locale/viVN.lua
+Locale/koKR.lua
+Locale/itIT.lua
+Locale/plPL.lua
+Locale/ukUA.lua
+Core/Const.lua
+Core/Events.lua
+Core/Safe.lua
+Core/Output.lua
+Core/Identity.lua
+Core/Settings.lua
+Data/Records.lua
+Data/Subscriptions.lua
+Data/Resolver.lua
+Data/Query.lua
+Share/Wire.lua
+Share/Codec.lua
+Community/Hash.lua
+Community/Report.lua
+Community/Aggregate.lua
+Community/Consent.lua
+Community/Rules.lua
+Community/Roster.lua
+Community/Envelope.lua
+Community/Global.lua
+Community/Net.lua
+Display/Markers.lua
+Enforce/Chat.lua
+Enforce/Requests.lua
+Enforce/Reply.lua
+Display/Portrait.lua
+Display/Tooltip.lua
+UI/Widgets.lua
+UI/Editor.lua
+UI/ContextMenu.lua
+UI/Manager.lua
+UI/ReplyControl.lua
+UI/Wizard.lua
+UI/TabList.lua
+UI/TabImported.lua
+UI/TabLists.lua
+UI/TabShare.lua
+UI/TabCommunity.lua
+UI/TabRules.lua
+UI/TabSettings.lua
+UI/Minimap.lua
+Diagnostics/Check.lua
+Main.lua

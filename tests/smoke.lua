@@ -1,4 +1,4 @@
--- Blackbook: stubbed-client smoke test (optional, complementary to run.lua).
+-- Nullgate's Blacklist: stubbed-client smoke test (optional, complementary to run.lua).
 --
 -- Run from the repository root:
 --     lua tests/smoke.lua
@@ -12,7 +12,7 @@
 -- The addon folder name is the one fixed fact here; the TOC, frame names and
 -- slash commands all come from the files under test. Run from the repository
 -- root: lua tests/smoke.lua
-local folder = "Blackbook"
+local folder = "NullgatesBlacklist-Forever"
 local source = debug.getinfo(1, "S").source or ""
 local script = source:match("^@(.*)$") or "tests/smoke.lua"
 local bs = string.char(92) -- a backslash, for Windows paths
@@ -240,9 +240,9 @@ for key, handler in pairs(SlashCmdList) do
   slashKey, slashHandler = key, handler
 end
 Check(slashHandler ~= nil, "a slash command is registered")
-Equals(slashKey, string.upper(Const.ADDON_NAME), "SlashCmdList key is the upper-cased addon name")
-Equals(_G["SLASH_" .. tostring(slashKey) .. "1"], Const.SLASH_BLACKBOOK, "SLASH_<key>1 equals the long command")
-Equals(_G["SLASH_" .. tostring(slashKey) .. "2"], Const.SLASH_BLACKBOOK_SHORT, "SLASH_<key>2 equals the short command")
+Equals(slashKey, "NULLGATESBLACKLIST", "SlashCmdList key is NULLGATESBLACKLIST")
+Equals(_G["SLASH_" .. tostring(slashKey) .. "1"], Const.SLASH_LONG, "SLASH_<key>1 equals the long command")
+Equals(_G["SLASH_" .. tostring(slashKey) .. "2"], Const.SLASH_SHORT, "SLASH_<key>2 equals the short command")
 
 local function Run(input)
   printed = {}
@@ -269,7 +269,7 @@ Equals(#printed, 0, "ADDON_LOADED for another addon is ignored")
 
 Fire(folder)
 Equals(#printed, 1, "one message after loading")
-Contains(printed[1], Const.ADDON_NAME, "load message names the addon")
+Contains(printed[1], Const.DISPLAY_NAME, "load message names the addon")
 Contains(printed[1], ns.L.MSG_LOADED, "load message uses the locale string")
 Check(ns.L == ns.Locale.Tables.de, "a deDE client selects the German table")
 
@@ -315,7 +315,7 @@ ns.Settings.Init()
 local out = Run("help")
 Equals(#out, 14, "help prints fourteen lines")
 Contains(out[1], ns.L.HELP_HEADER, "help header")
-Contains(out[2], Const.SLASH_BLACKBOOK_SHORT, "help lines use the short command")
+Contains(out[2], Const.SLASH_SHORT, "help lines use the short command")
 
 local tocVersion
 do
@@ -333,9 +333,9 @@ Run("version")
 Contains(LastPrinted(), string.format(ns.L.MSG_VERSION, "?"), "version command copes with missing metadata API")
 
 Run("")
-Check(_G.CurrentBlackbookManager ~= nil and _G.CurrentBlackbookManager:IsShown(), "the bare command opens the window")
+Check(_G.CurrentNullgateBlacklistManager ~= nil and _G.CurrentNullgateBlacklistManager:IsShown(), "the bare command opens the window")
 Run("")
-Check(not _G.CurrentBlackbookManager:IsShown(), "the bare command closes it again")
+Check(not _G.CurrentNullgateBlacklistManager:IsShown(), "the bare command closes it again")
 
 Run("list")
 Contains(LastPrinted(), ns.L.MSG_LIST_EMPTY, "empty list message")
@@ -363,11 +363,11 @@ Run("ignore Self Char")
 Contains(LastPrinted(), ns.L.MSG_SELF, "own character is refused")
 
 Run("setup")
-Check(_G.CurrentBlackbookWizard ~= nil and _G.CurrentBlackbookWizard:IsShown(), "/bb setup opens the setup wizard")
-_G.CurrentBlackbookWizard:Hide()
+Check(_G.CurrentNullgateBlacklistWizard ~= nil and _G.CurrentNullgateBlacklistWizard:IsShown(), "/nbl setup opens the setup wizard")
+_G.CurrentNullgateBlacklistWizard:Hide()
 
--- Minimap button: created at load, toggled by /bb minimap, position persists.
-local minimapButton = _G.BlackbookMinimapButton
+-- Minimap button: created at load, toggled by /nbl minimap, position persists.
+local minimapButton = _G.NullgateBlacklistMinimapButton
 Check(minimapButton ~= nil and minimapButton.shown, "the minimap button is shown by default")
 Run("minimap")
 Contains(LastPrinted(), ns.L.MSG_MINIMAP_HIDDEN, "minimap command reports hiding")
@@ -427,17 +427,17 @@ end
 
 out = Run("warn Alpha Beta")
 Equals(#out, 0, "opening the editor prints nothing")
-local editor = _G.CurrentBlackbookEditor
+local editor = _G.CurrentNullgateBlacklistEditor
 Check(editor ~= nil and editor:IsShown(), "the editor is shown")
 local function InList(list, value)
   for _, entry in ipairs(list) do if entry == value then return true end end
   return false
 end
-Check(InList(UISpecialFrames, "BlackbookEditor"), "the editor is listed in UISpecialFrames")
-Check(InList(UISpecialFrames, "BlackbookManager"), "the window is listed in UISpecialFrames")
-Equals(_G.CurrentBlackbookEditor.strata, "DIALOG", "the editor sits in the DIALOG strata, above HUD addons")
-Equals(_G.CurrentBlackbookManager.strata, "DIALOG", "the window sits in the DIALOG strata, above HUD addons")
-Check(_G.CurrentBlackbookEditor.toplevel and _G.CurrentBlackbookManager.toplevel, "both windows rise when clicked")
+Check(InList(UISpecialFrames, "NullgateBlacklistEditor"), "the editor is listed in UISpecialFrames")
+Check(InList(UISpecialFrames, "NullgateBlacklistManager"), "the window is listed in UISpecialFrames")
+Equals(_G.CurrentNullgateBlacklistEditor.strata, "DIALOG", "the editor sits in the DIALOG strata, above HUD addons")
+Equals(_G.CurrentNullgateBlacklistManager.strata, "DIALOG", "the window sits in the DIALOG strata, above HUD addons")
+Check(_G.CurrentNullgateBlacklistEditor.toplevel and _G.CurrentNullgateBlacklistManager.toplevel, "both windows rise when clicked")
 
 local p = Parts(editor)
 Check(p.nameBox and p.comment and p.save and p.cancel, "name box, comment box and both buttons exist")
@@ -516,7 +516,7 @@ Equals(#ns.Records.All(), 0, "all records removed")
 
 ns.Records.Save("Alpha Beta", "warn", { harassment = true }, "Pulled the boss on purpose")
 Run("ignore Alpha Beta")
-p = Parts(_G.CurrentBlackbookEditor)
+p = Parts(_G.CurrentNullgateBlacklistEditor)
 Equals(p.nameBox.text, "Alpha Beta", "an existing record is loaded")
 Equals(p.radios.warn.checked, true, "the stored verdict wins over the command")
 Equals(p.comment.text, "Pulled the boss on purpose", "the stored comment is loaded")
@@ -530,7 +530,7 @@ Check(ns.Records.Get("gamma delta") ~= nil, "the renamed record exists")
 
 ns.Records.Save("Epsilon Zeta", "ignore", { spam = true }, "Other record")
 Run("ignore Gamma Delta")
-p = Parts(_G.CurrentBlackbookEditor)
+p = Parts(_G.CurrentNullgateBlacklistEditor)
 Type(p.nameBox, "Epsilon Zeta")
 printed = {}
 Click(p.save)
@@ -539,7 +539,7 @@ Equals(ns.Records.Get("epsilon zeta").comment, "Other record", "the other record
 Check(ns.Records.Get("gamma delta") ~= nil, "the renamed record stays where it was")
 
 Run("ignore Fresh Person")
-p = Parts(_G.CurrentBlackbookEditor)
+p = Parts(_G.CurrentNullgateBlacklistEditor)
 Equals(p.comment.text, "", "a new record starts with an empty comment")
 Equals(p.labels[1].checked, false, "a new record starts without labels")
 Type(p.nameBox, "Epsilon Zeta")
@@ -552,7 +552,7 @@ Contains(LastPrinted(), string.format(ns.L.MSG_NAME_TAKEN, "Epsilon Zeta"), "a n
 Equals(ns.Records.Get("epsilon zeta").comment, "Other record", "nothing was overwritten")
 
 Click(p.cancel)
-Check(not _G.CurrentBlackbookEditor:IsShown(), "Cancel closes the editor")
+Check(not _G.CurrentNullgateBlacklistEditor:IsShown(), "Cancel closes the editor")
 ns.Records.Remove("gamma delta")
 ns.Records.Remove("epsilon zeta")
 Equals(#ns.Records.All(), 0, "editor tests left no records behind")
@@ -562,7 +562,7 @@ Equals(#ns.Records.All(), 0, "editor tests left no records behind")
 ns.Records.Save("Row One", "ignore", { scam = true }, "first comment")
 ns.Records.Save("Row Two", "warn", { spam = true }, "second comment")
 Run("")
-local manager = _G.CurrentBlackbookManager
+local manager = _G.CurrentNullgateBlacklistManager
 Check(manager:IsShown(), "the window opens")
 
 local function Box() return Find(manager, function(f) return f.provider ~= nil end)[1] end
@@ -636,10 +636,10 @@ Equals(Names(), "Row One,Row Two", "a new column starts ascending")
 -- clicking a row: edit, shift-click: delete
 IsShiftKeyDown = function() return false end
 Click(row)
-Check(_G.CurrentBlackbookEditor:IsShown(), "clicking a row opens the editor")
-Equals(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "EditBox" and f.role == "input" end)[1].text,
+Check(_G.CurrentNullgateBlacklistEditor:IsShown(), "clicking a row opens the editor")
+Equals(Find(_G.CurrentNullgateBlacklistEditor, function(f) return f.kind == "EditBox" and f.role == "input" end)[1].text,
   "Row Two", "the editor shows that record")
-Click(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1])
+Click(Find(_G.CurrentNullgateBlacklistEditor, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1])
 IsShiftKeyDown = function() return true end
 printed = {}
 Click(row)
@@ -655,10 +655,10 @@ local addBox = inputs[2]
 local addButton = ButtonByText(ns.L.LIST_ADD)
 addBox:SetText("Typed Name")
 Click(addButton)
-Equals(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "EditBox" and f.role == "input" end)[1].text,
+Equals(Find(_G.CurrentNullgateBlacklistEditor, function(f) return f.kind == "EditBox" and f.role == "input" end)[1].text,
   "Typed Name", "the add box opens the editor with the typed name")
 Equals(addBox.text, "", "the add box is cleared")
-Click(Find(_G.CurrentBlackbookEditor, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1])
+Click(Find(_G.CurrentNullgateBlacklistEditor, function(f) return f.kind == "Button" and f.text == ns.L.EDITOR_CANCEL end)[1])
 
 -- --- Window: settings tab -----------------------------------------------------------
 
@@ -684,7 +684,7 @@ printed = {}
 Click(englishChoice)
 Equals(ns.Settings.Get("language"), "en", "choosing a language saves it")
 Equals(ns.L, ns.Locale.Tables.en, "and applies it at once")
-manager = _G.CurrentBlackbookManager
+manager = _G.CurrentNullgateBlacklistManager
 Check(manager:IsShown(), "the window is rebuilt and stays open")
 Check(ButtonByText(ns.L.TAB_SETTINGS) ~= nil and ns.L.TAB_SETTINGS ~= germanSettingsTab, "the tab bar is now in English")
 Check(Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.L.OPT_HIDE_CHAT end)[1] ~= nil,
@@ -692,7 +692,7 @@ Check(Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.
 Contains(LastPrinted(), "English", "the language change is confirmed")
 Click(Find(manager, function(f) return f.kind == "CheckButton" and f.text == ns.L.LANG_AUTO end)[1])
 Equals(ns.Settings.Get("language"), "auto", "language back to automatic")
-manager = _G.CurrentBlackbookManager
+manager = _G.CurrentNullgateBlacklistManager
 Equals(ns.L, ns.Locale.Tables.de, "which follows the client again")
 Check(ButtonByText(ns.L.TAB_SETTINGS) ~= nil, "and the window is in that language")
 Click(ButtonByText(ns.L.TAB_LIST))
@@ -741,7 +741,7 @@ for _, frame in ipairs(frames) do
 end
 Check(targetFrame ~= nil, "the target change event is registered")
 targetFrame._scripts.OnEvent(targetFrame, "PLAYER_TARGET_CHANGED")
-local mark = _G.BlackbookTargetMark
+local mark = _G.NullgateBlacklistTargetMark
 Check(mark ~= nil and mark.shown, "the portrait mark is shown for a warned target")
 Check(mark.icon.shown and not mark.strike.shown, "a warned target gets the corner icon")
 Check(mark.icon.texture and mark.icon.texture:find("AlertNew", 1, true), "with the warning texture")
@@ -756,14 +756,14 @@ smokeTarget = { "Mark", "Warn" }
 GameTooltip.lines = {}
 tooltipCallback(GameTooltip)
 Check(#GameTooltip.lines >= 3, "the tooltip gets the verdict, labels and comment")
-Contains(GameTooltip.lines[1], "Blackbook: ", "the first tooltip line names the addon")
+Contains(GameTooltip.lines[1], "Nullgate's Blacklist: ", "the first tooltip line names the addon")
 Contains(GameTooltip.lines[3], "now ignored", "the comment is shown")
 ns.Records.Remove("mark warn")
 smokeTarget = nil
 
--- /bb test shows a sample chat line so the icons can be checked in game.
+-- /nbl test shows a sample chat line so the icons can be checked in game.
 local warnLine = Run("test warn")
-Equals(#warnLine, 1, "/bb test warn prints one sample line")
+Equals(#warnLine, 1, "/nbl test warn prints one sample line")
 Contains(warnLine[1], "UI-Dialog-Icon-AlertNew", "the warn sample carries the warning icon")
 Contains(warnLine[1], ns.L.MSG_TEST_SAMPLE, "the warn sample has the sample text")
 Contains(Run("test notice")[1], "Arrow-Down-Up", "the notice sample carries the notice icon")
@@ -772,8 +772,8 @@ Contains(Run("test ignore")[1], ns.L.MSG_TEST_HIDDEN, "ignore sample explains hi
 ns.Settings.Set("hideChat", false)
 Contains(Run("test ignore")[1], "|cffe61a1a", "ignore sample shows the red cross when hiding is off")
 ns.Settings.Set("hideChat", true)
-Contains(Run("test")[1], ns.L.MSG_TEST_USAGE, "/bb test without a verdict shows the usage")
-Contains(Run("test bogus")[1], ns.L.MSG_TEST_USAGE, "/bb test with an unknown verdict shows the usage")
+Contains(Run("test")[1], ns.L.MSG_TEST_USAGE, "/nbl test without a verdict shows the usage")
+Contains(Run("test bogus")[1], ns.L.MSG_TEST_USAGE, "/nbl test with an unknown verdict shows the usage")
 
 -- --- Sharing: tabs, export, import, lists and the transfer hook ------------------------------------
 
@@ -851,16 +851,16 @@ do
   pasteBox.edit:SetText(foreign)
   Click(importButton)
   Equals(smokePopups, 1, "a good code asks for confirmation")
-  Equals(smokeLastPopup.which, "BLACKBOOK_CONFIRM_IMPORT", "with Blackbook's popup")
+  Equals(smokeLastPopup.which, "NULLGATE_BLACKLIST_CONFIRM_IMPORT", "with Nullgate's Blacklist's popup")
   Contains(smokeLastPopup.a, "Foreign list", "naming the list")
   Contains(smokeLastPopup.a, "Zed Zed", "and its author")
   Contains(smokeLastPopup.b, "2", "and its size")
   Equals(ns.Subscriptions.Get("feedbeef0001"), nil, "nothing is imported before the player confirms")
-  StaticPopupDialogs.BLACKBOOK_CONFIRM_IMPORT.OnCancel()
-  StaticPopupDialogs.BLACKBOOK_CONFIRM_IMPORT.OnAccept()
+  StaticPopupDialogs.NULLGATE_BLACKLIST_CONFIRM_IMPORT.OnCancel()
+  StaticPopupDialogs.NULLGATE_BLACKLIST_CONFIRM_IMPORT.OnAccept()
   Equals(ns.Subscriptions.Get("feedbeef0001"), nil, "cancelling forgets the pending import")
   Click(importButton)
-  StaticPopupDialogs.BLACKBOOK_CONFIRM_IMPORT.OnAccept()
+  StaticPopupDialogs.NULLGATE_BLACKLIST_CONFIRM_IMPORT.OnAccept()
   Check(ns.Subscriptions.Get("feedbeef0001") ~= nil, "confirming imports the list")
   Equals(pasteBox.edit.text, "", "the paste box is emptied after an import")
   Equals(ns.Resolver.Verdict("Foreign One"), "notice", "an imported entry is a notice until a rule says more")
@@ -908,7 +908,7 @@ do
   Equals(importedRow.cells.verdict.text, ns.L.VERDICT_WARN, "with the verdict the rules give")
   Equals(importedRow.cells.list.text, "Foreign list", "and the list it came from")
   Click(importedRow)
-  local adopt = Parts(_G.CurrentBlackbookEditor)
+  local adopt = Parts(_G.CurrentNullgateBlacklistEditor)
   Equals(adopt.nameBox.text, "Foreign One", "a click opens the editor for that player")
   Equals(adopt.comment.text, "bad ad", "prefilled with the list's comment")
   Click(adopt.cancel)
@@ -1056,13 +1056,13 @@ do
   smokePopups = 0
   Click(addRule)
   Equals(smokePopups, 1, "a rule that ignores players asks for confirmation")
-  Equals(smokeLastPopup.which, "BLACKBOOK_CONFIRM_RULE", "with Blackbook's popup")
+  Equals(smokeLastPopup.which, "NULLGATE_BLACKLIST_CONFIRM_RULE", "with Nullgate's Blacklist's popup")
   Contains(smokeLastPopup.a, ns.L.RULES_IGNORE_CONFIRM, "saying what it will do")
   Equals(#ns.Rules.List(), 0, "nothing is created before the player confirms")
-  StaticPopupDialogs.BLACKBOOK_CONFIRM_RULE.OnCancel()
+  StaticPopupDialogs.NULLGATE_BLACKLIST_CONFIRM_RULE.OnCancel()
   Equals(#ns.Rules.List(), 0, "cancelling creates nothing")
   Click(addRule)
-  StaticPopupDialogs.BLACKBOOK_CONFIRM_RULE.OnAccept()
+  StaticPopupDialogs.NULLGATE_BLACKLIST_CONFIRM_RULE.OnAccept()
   Equals(#ns.Rules.List(), 1, "confirming creates the rule")
   local rule = ns.Rules.List()[1]
   Equals(rule.label .. "/" .. rule.source .. "/" .. rule.minTier .. "/" .. rule.verdict, "scam/guild/2/ignore",
@@ -1093,9 +1093,9 @@ do
   smokePopups, smokeSent = 0, {}
   Click(Button(community, ns.L.COMM_REVOKE))
   Equals(smokePopups, 1, "revoking asks first")
-  Equals(smokeLastPopup.which, "BLACKBOOK_CONFIRM_REVOKE", "with Blackbook's popup")
+  Equals(smokeLastPopup.which, "NULLGATE_BLACKLIST_CONFIRM_REVOKE", "with Nullgate's Blacklist's popup")
   Equals(ns.Consent.Active(), true, "nothing changes before the player confirms")
-  StaticPopupDialogs.BLACKBOOK_CONFIRM_REVOKE.OnAccept()
+  StaticPopupDialogs.NULLGATE_BLACKLIST_CONFIRM_REVOKE.OnAccept()
   RunShortTimers()
   Equals(ns.Consent.Active(), false, "revoking withdraws consent")
   Equals(ns.Settings.Get("community.guild.send"), false, "and switches sending off")
@@ -1112,7 +1112,7 @@ do
   Run("")
 end
 
--- --- M8: setup wizard, reply control, first-run trigger and /bb check ------------------------------------
+-- --- M8: setup wizard, reply control, first-run trigger and /nbl check ------------------------------------
 
 do
   local function RunTimers(maxDelay)
@@ -1142,7 +1142,7 @@ do
   end
   Check(loginFrame ~= nil, "the login event is listened to")
   ns.Settings.Set("setupDone", false)
-  local wizard = _G.CurrentBlackbookWizard
+  local wizard = _G.CurrentNullgateBlacklistWizard
   wizard:Hide()
   smokeTimers = {}
   loginFrame._scripts.OnEvent(loginFrame, "PLAYER_LOGIN")
@@ -1151,7 +1151,7 @@ do
   Check(waiting ~= nil, "the wizard is scheduled two seconds after login")
   Check(not wizard:IsShown(), "and does not open at once")
   RunTimers(2)
-  wizard = _G.CurrentBlackbookWizard -- a language change earlier rebuilt it under a new name
+  wizard = _G.CurrentNullgateBlacklistWizard -- a language change earlier rebuilt it under a new name
   Check(wizard:IsShown(), "on the first run the wizard opens")
   Equals(ns.Settings.Get("setupDone"), false, "opening it does not finish the setup")
   Equals(wizard.strata, "DIALOG", "it sits above other addons' frames")
@@ -1176,13 +1176,13 @@ do
   printed = {}
   Click(englishChoice)
   Equals(ns.Settings.Get("language"), "en", "the language choice saves the language")
-  wizard = _G.CurrentBlackbookWizard
+  wizard = _G.CurrentNullgateBlacklistWizard
   Check(wizard:IsShown(), "the wizard is rebuilt in the new language and stays open")
   Check(ns.L.WIZ_WELCOME_TITLE ~= germanTitle, "(the texts are English now)")
   Equals(ShownPages(), 1, "on the same page")
   Equals(ns.Settings.Get("setupDone"), false, "changing the language does not finish the setup")
   Click(Checks(wizard, ns.L.LANG_AUTO)[1])
-  wizard = _G.CurrentBlackbookWizard
+  wizard = _G.CurrentNullgateBlacklistWizard
   Equals(ns.Settings.Get("language"), "auto", "and can go back to automatic")
   back = Button(wizard, ns.L.WIZ_BACK)
   nextButton = Button(wizard, ns.L.WIZ_NEXT)
@@ -1235,13 +1235,13 @@ do
   wizard._scripts.OnHide(wizard)
   Equals(ns.Settings.Get("setupDone"), true, "closing the wizard finishes the setup")
 
-  -- It never appears again by itself, but /bb setup brings it back.
+  -- It never appears again by itself, but /nbl setup brings it back.
   smokeTimers = {}
   loginFrame._scripts.OnEvent(loginFrame, "PLAYER_LOGIN")
   RunTimers(2)
   Check(not wizard:IsShown(), "after the first run the wizard stays closed")
   Run("setup")
-  Check(wizard:IsShown(), "/bb setup opens it again")
+  Check(wizard:IsShown(), "/nbl setup opens it again")
   wizard:Hide()
 
   -- Settings tab: the reply control and a way back into the wizard.
@@ -1266,7 +1266,7 @@ do
   Check(whisperFrame ~= nil, "whispers are listened to for the automatic reply")
   Check(chatFilters.CHAT_MSG_WHISPER_INFORM ~= nil, "the echo of an automatic reply is filtered")
 
-  -- /bb check: features, then the loopback test of the sharing connection.
+  -- /nbl check: features, then the loopback test of the sharing connection.
   local communityFrame
   for _, frame in ipairs(frames) do
     if frame.events and frame.events.CHAT_MSG_ADDON then communityFrame = frame end
@@ -1330,7 +1330,7 @@ do
   GetChannelName = function(name) if channel == name then return 7, name end return 0 end
 
   Run("")
-  manager = _G.CurrentBlackbookManager
+  manager = _G.CurrentNullgateBlacklistManager
   Equals(ns.Consent.Active(), false, "(nothing is confirmed at this point)")
 
   -- The global switches ask for their own confirmation first.
@@ -1346,7 +1346,7 @@ do
   globalSend:SetChecked(true)
   Click(globalSend)
   Equals(smokePopups, 1, "turning on a global switch shows a notice")
-  Equals(smokeLastPopup.which, "BLACKBOOK_CONFIRM_GLOBAL", "Blackbook's own popup")
+  Equals(smokeLastPopup.which, "NULLGATE_BLACKLIST_CONFIRM_GLOBAL", "Nullgate's Blacklist's own popup")
   Equals(smokeLastPopup.a, ns.L.GLOBAL_NOTICE, "with the notice of the global channel")
   Equals(globalSend.checked, false, "the box does not stay ticked")
   Equals(ns.Settings.Get("community.global.send"), false, "and nothing was switched on")
@@ -1354,7 +1354,7 @@ do
   Equals(channel, nil, "and no channel was joined")
   Contains(ns.Locale.Tables.en.GLOBAL_NOTICE, "is public", "the notice says the channel is public")
 
-  StaticPopupDialogs.BLACKBOOK_CONFIRM_GLOBAL.OnAccept()
+  StaticPopupDialogs.NULLGATE_BLACKLIST_CONFIRM_GLOBAL.OnAccept()
   Equals(ns.Consent.GlobalActive(), true, "accepting confirms the global notice")
   Equals(ns.Consent.Active(), true, "and the general one")
   Equals(ns.Settings.Get("community.global.send"), true, "and switches the box on")
@@ -1418,7 +1418,7 @@ do
   GameTooltip.lines = {}
   tooltipCallback(GameTooltip)
   Check(#GameTooltip.lines >= 3, "the same player now gets a sample tooltip")
-  Contains(GameTooltip.lines[1], "Blackbook: ", "that starts like a real one")
+  Contains(GameTooltip.lines[1], "Nullgate's Blacklist: ", "that starts like a real one")
   Equals(GameTooltip.lines[#GameTooltip.lines], ns.L.TT_TEST_BANNER, "and ends by saying it is a sample")
   smokeTarget = { "Self", "Char" }
   GameTooltip.lines = {}
@@ -1433,10 +1433,10 @@ do
     "in test mode even a really flagged player shows the sample, not the real record")
   ns.Records.Remove("real flagged")
 
-  -- /bb test mode toggles it and the box follows.
+  -- /nbl test mode toggles it and the box follows.
   printed = {}
   Run("test mode")
-  Equals(ns.Tooltip.TestMode(), false, "/bb test mode turns it off again")
+  Equals(ns.Tooltip.TestMode(), false, "/nbl test mode turns it off again")
   Contains(LastPrinted(), ns.L.MSG_TEST_MODE_OFF, "and says so")
   Equals(testBox.checked, false, "and the box on the settings tab follows")
   Run("test mode")
@@ -1457,7 +1457,7 @@ local root = {
   CreateButton = function(_, text) entries[#entries + 1] = text end,
 }
 menuHooks.MENU_UNIT_TARGET(nil, root, { name = "Menu Target-Realm" })
-Equals(entries[2], ns.L.CTX_TITLE, "the menu hook adds the Blackbook title")
+Equals(entries[2], ns.L.CTX_TITLE, "the menu hook adds the Nullgate's Blacklist title")
 Equals(entries[3], ns.L.CTX_IGNORE, "the menu hook offers Ignore for a new player")
 
 -- --- Summary -------------------------------------------------------------------
