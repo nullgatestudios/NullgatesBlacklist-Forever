@@ -4,13 +4,17 @@ All notable changes to Nullgate's Blacklist (formerly Blackbook) are listed here
 
 ## [Unreleased]
 
-## [1.0.0-alpha.3] - 2026-11-18
+## [1.0.0] - 2026-11-18
 ### Changed
 - **Blackbook is now Nullgate's Blacklist - Forever**, part of the Nullgate addon suite.
 - **This is a fresh start:** the addon folder is now `NullgatesBlacklist-Forever`, so your Blackbook list, imported lists and settings are not carried over. The setup wizard runs again on first login.
 - The slash commands are now `/nbl` and `/blacklist`. `/blackbook` and `/bb` no longer work.
 - Delete the old `Blackbook` folder from `Interface\AddOns`. If it is still installed, you are offered a button to disable it, because running both makes everything happen twice.
-- Sharing with older versions keeps working: list codes, friends and guild reports and the global channel are unchanged.
+- List codes and friends and guild reports still work with older versions.
+- **Global reports are kept apart from friends and guild.** They now use their own scrambling, so a report seen on the global channel can't be matched against friends and guild reports. Global reports from 1.0.0-alpha.2 and earlier no longer match, and fade out on their own.
+
+### Added
+- **Report card.** Right-click a player and choose **Report card** to see everything known about them in one window: your own entry, imported lists, and what friends, guild and the global channel report, with each reason and how many players reported it. Friends and guild reports show which character sent them; global reports only ever show a count.
 
 ## [1.0.0-alpha.2] - 2026-11-16
 ### Added

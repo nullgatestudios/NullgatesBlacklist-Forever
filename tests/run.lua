@@ -65,6 +65,7 @@ Load("Community/Roster.lua")
 Load("Community/Envelope.lua")
 Load("Community/Global.lua")
 Load("Community/Net.lua")
+Load("UI/ReportCard.lua")
 Load("Enforce/Reply.lua")
 Load("UI/ReplyControl.lua")
 Load("UI/Manager.lua")
@@ -641,11 +642,11 @@ Group("Context menu", function()
   EQ(ContextMenu.Build(root, { unit = "target" }), true, "a player unit gets entries")
   EQ(root.items[1].kind, "divider", "a divider comes first")
   EQ(root.items[2].text, L.CTX_TITLE, "then the title")
-  EQ(ButtonTexts(root), L.CTX_IGNORE .. "|" .. L.CTX_WARN, "new player: ignore and warn")
+  EQ(ButtonTexts(root), L.CTX_IGNORE .. "|" .. L.CTX_WARN .. "|" .. L.CTX_CARD, "new player: ignore, warn and the report card")
 
   root = StubRoot()
   EQ(ContextMenu.Build(root, { name = "Chat Guy-Realm" }), true, "a chat name gets entries")
-  EQ(ButtonTexts(root), L.CTX_IGNORE .. "|" .. L.CTX_WARN, "name context works like a unit")
+  EQ(ButtonTexts(root), L.CTX_IGNORE .. "|" .. L.CTX_WARN .. "|" .. L.CTX_CARD, "name context works like a unit")
 
   root = StubRoot()
   EQ(ContextMenu.Build(root, { unit = "player" }), false, "own character gets nothing")
@@ -665,7 +666,7 @@ Group("Context menu", function()
   ns.Records.Save("Menu Target", "ignore", { scam = true }, "x")
   root = StubRoot()
   ContextMenu.Build(root, { unit = "target" })
-  EQ(ButtonTexts(root), L.CTX_EDIT .. "|" .. L.CTX_REMOVE, "known player: edit and remove")
+  EQ(ButtonTexts(root), L.CTX_EDIT .. "|" .. L.CTX_REMOVE .. "|" .. L.CTX_CARD, "known player: edit, remove and the report card")
   local opened
   local realOpen = ns.Editor.Open
   ns.Editor.Open = function(name) opened = name end
@@ -682,7 +683,7 @@ Group("Context menu", function()
   }, { scam = "ignore" })
   root = StubRoot()
   ContextMenu.Build(root, { unit = "target" })
-  EQ(ButtonTexts(root), L.CTX_IGNORE .. "|" .. L.CTX_WARN .. "|" .. L.CTX_ADOPT, "list-only player: adopt is offered")
+  EQ(ButtonTexts(root), L.CTX_IGNORE .. "|" .. L.CTX_WARN .. "|" .. L.CTX_ADOPT .. "|" .. L.CTX_CARD, "list-only player: adopt is offered")
   local verdictArg, prefillArg
   ns.Editor.Open = function(name, verdict, prefill) opened, verdictArg, prefillArg = name, verdict, prefill end
   root.items[5].fn()
@@ -1695,6 +1696,94 @@ Group("Aggregate", function()
 end)
 
 -- --- Community: Report and the wire format (sections 8.6, 8.7) --------------------------------
+
+Group("Reporters and the report card", function()
+  local Aggregate, Rules, Consent, Hash, Const = ns.Aggregate, ns.Rules, ns.Consent, ns.Hash, ns.Const
+  local SCAM, SPAM = Const.LabelValue.scam, Const.LabelValue.spam
+
+  -- Global hashes use their own salt.
+  OK(Hash.Target("some player", 100, "global") ~= Hash.Target("some player", 100), "a global hash differs from the friends and guild hash")
+  EQ(Hash.Target("some player", 100, "friends"), Hash.Target("some player", 100), "friends and guild share one hash")
+  EQ(#Hash.AllCandidates("some player", 1700000000), 4, "all candidates cover both groups and two seasons")
+
+  -- The sending character is kept for friends and guild, never for global.
+  local db = FreshDb()
+  local H = HashOf(40)
+  Aggregate.Add(H, SCAM + SPAM, TODAY, TokenOf(1), "guild", "Bob-Realm")
+  Aggregate.Add(H, SCAM, TODAY - 3, TokenOf(2), "friends", "Carol-Realm")
+  Aggregate.Add(H, SCAM, TODAY, TokenOf(3), "global", "Dave-Realm")
+  EQ(db.community.reporters.guild[H][TokenOf(1)], "Bob-Realm", "a guild reporter is kept")
+  EQ(db.community.reporters.friends[H][TokenOf(2)], "Carol-Realm", "a friend reporter is kept")
+  EQ(db.community.reporters.global, nil, "a global reporter is never stored")
+
+  local detail = Aggregate.Detail({ H }, "guild", TODAY)
+  EQ(detail.count, 1, "the guild detail counts one reporter")
+  EQ(detail.labels.scam, 1, "per label")
+  EQ(detail.reporters[1].name, "Bob-Realm", "and names the reporter")
+  OK(detail.reporters[1].labels.scam and detail.reporters[1].labels.spam, "with the labels they reported")
+  local global = Aggregate.Detail({ H }, "global", TODAY)
+  EQ(global.count, 1, "the global detail only counts")
+  EQ(global.reporters, nil, "and has no reporter list")
+  EQ(Aggregate.Detail({ HashOf(41) }, "guild", TODAY), nil, "nothing held gives no detail")
+
+  -- Reporters go away with their reports.
+  Aggregate.Retract(H, TokenOf(1), "guild")
+  EQ(db.community.reporters.guild[H], nil, "a retraction forgets the reporter")
+  Aggregate.Add(HashOf(42), SCAM, TODAY - 200, TokenOf(5), "friends", "Old-Realm")
+  Aggregate.Expire(TODAY)
+  EQ(db.community.reporters.friends[HashOf(42)], nil, "expiry forgets the reporter")
+  OK(db.community.reporters.friends[H] ~= nil, "a reporter still inside the window stays")
+  Aggregate.Purge()
+  EQ(next(ns.db.community.reporters), nil, "purging forgets every reporter")
+
+  -- The card: what every receiving source holds, even below tier 1.
+  FreshDb()
+  UnitName = function(unit) if unit == "player" then return "Alice", "One" end end
+  local now = Hash.ServerTime()
+  local today = Hash.Day(now)
+  local key = "card target"
+  EQ(#Rules.Card("Card Target").sources, 0, "no consent: an empty card")
+  EQ(Rules.Card("Card Target").receiving, false, "and it says nothing is received")
+  Consent.ConfirmGlobal()
+  Consent.SetToggle("guild", "receive", true)
+  Consent.SetToggle("global", "receive", true)
+  local guildHash = Hash.Candidates(key, now, "friends")[1]
+  local globalHash = Hash.Candidates(key, now, "global")[1]
+  Aggregate.Add(guildHash, SCAM, today, TokenOf(1), "guild", "Bob-Realm")
+  for n = 1, 6 do Aggregate.Add(globalHash, SCAM, today, TokenOf(10 + n), "global") end
+  Aggregate.Add(globalHash, SCAM, today, TokenOf(30), "guild", "Wrong-Realm") -- a guild report under the global hash
+  local card = Rules.Card("Card Target")
+  EQ(card.receiving, true, "receiving is on")
+  EQ(#card.sources, 2, "guild and global both show")
+  local bySource = {}
+  for _, entry in ipairs(card.sources) do bySource[entry.source] = entry end
+  EQ(bySource.guild.count, 1, "one guild reporter")
+  EQ(bySource.guild.tier, 0, "below tier 1 still shows, at tier 0")
+  EQ(bySource.guild.reporters[1].name, "Bob-Realm", "the guild card names its reporter")
+  EQ(bySource.global.count, 6, "six global reporters")
+  EQ(bySource.global.tier, 1, "which reach tier 1")
+  EQ(bySource.global.reporters, nil, "global never names reporters")
+  -- The card's text: guild names its reporter, global only counts.
+  local function CardText(name)
+    local parts = {}
+    for _, line in ipairs(ns.ReportCard.Lines(name)) do parts[#parts + 1] = line.text end
+    return table.concat(parts, "\n")
+  end
+  local text = CardText("Card Target")
+  OK(text:find(ns.L.CARD_OWN_NONE, 1, true), "the card says the player is not on your list")
+  OK(text:find("Bob", 1, true), "the guild block names its reporter")
+  OK(not text:find("Wrong", 1, true), "a report filed under the other group's hash is not shown")
+  OK(text:find(ns.L.CARD_ANONYMOUS, 1, true), "the global block says it is anonymous")
+  OK(text:find(ns.L.CARD_BELOW_TIER, 1, true), "a source below the first tier says so")
+  ns.Records.Save("Card Target", "warn", { spam = true }, "mine")
+  OK(CardText("Card Target"):find("mine", 1, true), "an own record shows with its comment")
+
+  Rules.Hide("Card Target")
+  EQ(Rules.Card("Card Target").hidden, true, "a hidden flag says so on the card")
+  OK(CardText("Card Target"):find(ns.L.CARD_HIDDEN, 1, true), "and in its text")
+  FreshDb()
+  OK(CardText("Card Target"):find(ns.L.CARD_OFF, 1, true), "without consent the card says receiving is off")
+end)
 
 Group("Report", function()
   local Report, Hash, Const = ns.Report, ns.Hash, ns.Const
@@ -3561,7 +3650,8 @@ Group("Global sending and receiving", function()
   OK(not out[1].text:find("\t", 1, true) and not out[1].text:find("R1", 1, true), "the text is scrambled, not a plain report")
   local report = Open(out[1])
   EQ(report.kind, "R1", "opened with the hour's key it is a report")
-  EQ(report.items[1].hash, Hash.Target("bad one", Hash.Season(SERVER)), "naming the target only by its hash")
+  EQ(report.items[1].hash, Hash.Target("bad one", Hash.Season(SERVER), "global"), "naming the target only by its global hash")
+  OK(report.items[1].hash ~= Hash.Target("bad one", Hash.Season(SERVER)), "which differs from the friends and guild hash")
   OK(not out[1].text:find("Bad", 1, true) and not out[1].text:find("private", 1, true), "no name or comment on the wire")
   EQ(ns.db.community.sent.global[report.items[1].hash], report.items[1].mask, "the announcement is remembered for the global class")
   EQ(ns.db.community.sent.guild, nil, "and not for the guild")
@@ -3680,7 +3770,7 @@ Group("Global sending and receiving", function()
   Consent.ConfirmGlobal()
   Consent.SetToggle("global", "receive", true)
   local key = "global flag"
-  local hash = Hash.Candidates(key, SERVER)[1]
+  local hash = Hash.Candidates(key, SERVER, "global")[1]
   for n = 1, 4 do ns.Aggregate.Add(hash, Const.LabelValue.scam, today, TokenOf(n), "global") end
   ns.Events:Fire("COMMUNITY_CHANGED")
   EQ(Resolver.Verdict("Global Flag"), nil, "four global reporters are no flag (the global threshold is five)")

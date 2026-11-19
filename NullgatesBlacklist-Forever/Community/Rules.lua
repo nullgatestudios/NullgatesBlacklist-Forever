@@ -115,13 +115,12 @@ function Rules.Evaluate(key)
   if #receiving == 0 then return nil, {} end
   local now = Hash.ServerTime()
   local today = Hash.Day(now)
-  local hashes = Hash.Candidates(key, now)
-  if Hidden(hashes) then return nil, {} end
+  if Hidden(Hash.AllCandidates(key, now)) then return nil, {} end
 
   local best, reasons = nil, {}
   for _, source in ipairs(receiving) do
     local pick
-    for _, hash in ipairs(hashes) do
+    for _, hash in ipairs(Hash.Candidates(key, now, Const.SourceGroup[source])) do
       local found = ForSource(source, hash, today)
       if found and (not pick or RANK[found.verdict] > RANK[pick.verdict]
         or (RANK[found.verdict] == RANK[pick.verdict] and found.tier > pick.tier)) then
@@ -146,7 +145,7 @@ function Rules.Hide(name)
   local community = ns.db and ns.db.community
   if not key or not community then return false end
   if type(community.hidden) ~= "table" then community.hidden = {} end
-  for _, hash in ipairs(Hash.Candidates(key, Hash.ServerTime())) do
+  for _, hash in ipairs(Hash.AllCandidates(key, Hash.ServerTime())) do
     community.hidden[hash] = ns.Identity.Normalize(name)
   end
   Events:Fire(Const.Events.COMMUNITY_CHANGED)
@@ -183,5 +182,39 @@ end
 -- True when the player hid community data about this name.
 function Rules.IsHidden(name)
   local key = ns.Identity.Key(name)
-  return key ~= nil and Hidden(Hash.Candidates(key, Hash.ServerTime()))
+  return key ~= nil and Hidden(Hash.AllCandidates(key, Hash.ServerTime()))
+end
+
+-- --- Report card -----------------------------------------------------------------
+
+-- What every receiving source holds about a player, for the report card:
+-- { hidden = bool, receiving = bool, sources = { {
+--     source =, tier = (0 when below tier 1), verdict =, count =, labels = { id = count },
+--     reporters = { { name =, day =, labels = set } } (nil for global) } } }.
+-- Data shows even when it is below tier 1 or hidden, so the player can see why.
+function Rules.Card(name)
+  local key = ns.Identity.Key(name)
+  local card = { hidden = false, receiving = false, sources = {} }
+  if not key then return card end
+  local now = Hash.ServerTime()
+  local today = Hash.Day(now)
+  card.hidden = Hidden(Hash.AllCandidates(key, now))
+  local receiving = Consent.Receiving()
+  card.receiving = #receiving > 0
+  for _, source in ipairs(receiving) do
+    local hashes = Hash.Candidates(key, now, Const.SourceGroup[source])
+    local detail = Aggregate.Detail(hashes, source, today)
+    if detail then
+      local entry = { source = source, tier = 0, verdict = "notice", count = detail.count,
+        labels = detail.labels, reporters = detail.reporters }
+      for _, hash in ipairs(hashes) do
+        local found = ForSource(source, hash, today)
+        if found and (found.tier > entry.tier or RANK[found.verdict] > RANK[entry.verdict]) then
+          entry.tier, entry.verdict = found.tier, found.verdict
+        end
+      end
+      card.sources[#card.sources + 1] = entry
+    end
+  end
+  return card
 end

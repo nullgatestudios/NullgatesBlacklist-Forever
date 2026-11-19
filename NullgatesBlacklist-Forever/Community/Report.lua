@@ -21,7 +21,8 @@ local MAX_BYTES = 255
 
 -- Items for every own record that qualifies:
 -- { key =, hash =, mask =, day =, token = }, sorted by hash.
--- records: array of own records; opts = { shareLabels = set, secret = text, now = server time }.
+-- records: array of own records; opts = { shareLabels = set, secret = text, now = server time,
+-- group = "friends" | "global" (the source group the reports are for; it picks the hash salt) }.
 function Report.Build(records, opts)
   local items = {}
   local season, today = Hash.Season(opts.now), Hash.Day(opts.now)
@@ -34,7 +35,7 @@ function Report.Build(records, opts)
       local mask = Const.LabelsToMask(shared)
       local key = Identity.Key(record.name)
       if mask > 0 and key then
-        local hash = Hash.Target(key, season)
+        local hash = Hash.Target(key, season, opts.group)
         local created = Hash.Day(record.created or opts.now)
         items[#items + 1] = {
           key = key, hash = hash, mask = mask,

@@ -47,6 +47,7 @@ function ContextMenu.Build(root, context)
   if Records.Get(name) then
     root:CreateButton(Output.Text("CTX_EDIT"), function() Editor.Open(name) end)
     root:CreateButton(Output.Text("CTX_REMOVE"), function() Editor.Remove(name) end)
+    root:CreateButton(Output.Text("CTX_CARD"), function() ns.ReportCard.Open(name) end)
     return true
   end
 
@@ -75,6 +76,7 @@ function ContextMenu.Build(root, context)
       break
     end
   end
+  root:CreateButton(Output.Text("CTX_CARD"), function() ns.ReportCard.Open(name) end)
   return true
 end
 

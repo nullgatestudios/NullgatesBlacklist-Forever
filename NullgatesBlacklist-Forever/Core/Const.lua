@@ -157,6 +157,9 @@ Const.EnvelopeSalt = "blackbook-envelope-v1"
 
 -- Hash inputs (section 8.2).
 Const.SeasonSalt = "blackbook-season-v1"
+-- Global reports are hashed with their own salt, so a hash seen on the global
+-- channel can't be matched against friends and guild reports, or the other way round.
+Const.GlobalSeasonSalt = "nullgate-blacklist-global-season-v1"
 Const.SeasonDays = 90
 
 -- Version of the community disclosure text (section 8.9).

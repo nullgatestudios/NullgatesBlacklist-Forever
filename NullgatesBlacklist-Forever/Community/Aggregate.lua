@@ -3,9 +3,11 @@
 -- global data never mix:
 --
 --   db.community.reports[source][targetHash][labelId][token] = day
+--   db.community.reporters[source][targetHash][token] = sending character (friends and guild only)
 --
 -- A flag's tier counts distinct tokens (distinct reporters) whose day lies in a
--- window. Nothing here stores who sent a report. Pure given ns.db.
+-- window. For friends and guild the sending character is kept next to its token,
+-- for the report card; global reports never store who sent them. Pure given ns.db.
 local _, ns = ...
 
 local Const = ns.Const
@@ -29,6 +31,37 @@ local function Reports()
   if not community then return nil end
   if type(community.reports) ~= "table" then community.reports = {} end
   return community.reports
+end
+
+-- Sending characters by token, for one source and target (nil for global).
+local function ReporterTable(community, source, hash, create)
+  if Const.SourceGroup[source] == "global" then return nil end
+  if type(community.reporters) ~= "table" then
+    if not create then return nil end
+    community.reporters = {}
+  end
+  local bySource = community.reporters[source]
+  if not bySource then
+    if not create then return nil end
+    bySource = {}
+    community.reporters[source] = bySource
+  end
+  if not bySource[hash] and create then bySource[hash] = {} end
+  return bySource[hash]
+end
+
+-- Forgets the sending character of a token once no label of the target holds it.
+local function ForgetReporter(community, source, hash, token)
+  local byToken = ReporterTable(community, source, hash, false)
+  if not byToken or byToken[token] == nil then return end
+  local byLabel = community.reports[source] and community.reports[source][hash]
+  if byLabel then
+    for _, tokens in pairs(byLabel) do
+      if tokens[token] ~= nil then return end
+    end
+  end
+  byToken[token] = nil
+  if next(byToken) == nil then community.reporters[source][hash] = nil end
 end
 
 -- The counters live in the saved data so a rebuild is only needed once.
@@ -82,13 +115,15 @@ local function TrimOldest(community)
       byHash[entry.hash] = nil
       Adjust(community, entry.source, 0, -1)
     end
+    ForgetReporter(community, entry.source, entry.hash, entry.token)
   end
 end
 
 -- Files one report: for every label bit in mask, the token is stored under the
 -- source if it is not there yet (the first-seen day wins). Returns the number of
 -- label entries that were new. Invalid input and a full target table add nothing.
-function Aggregate.Add(hash, mask, day, token, source)
+-- reporter (the sending character) is kept for friends and guild, never for global.
+function Aggregate.Add(hash, mask, day, token, source, reporter)
   local community = Community()
   if not community or not VALID_SOURCE[source] then return 0 end
   if not (ValidHash(hash) and ValidToken(token) and type(day) == "number") then return 0 end
@@ -126,8 +161,13 @@ function Aggregate.Add(hash, mask, day, token, source)
         byToken[token] = day
         Adjust(community, source, 1, 0)
         added = added + 1
+        if count >= Limits.tokenCap then ForgetReporter(community, source, hash, oldestToken) end
       end
     end
+  end
+  if type(reporter) == "string" and reporter ~= "" and byHash[hash] then
+    local reporters = ReporterTable(community, source, hash, true)
+    if reporters then reporters[token] = reporter end
   end
   return added
 end
@@ -152,6 +192,7 @@ function Aggregate.Retract(hash, token, source)
     byHash[hash] = nil
     Adjust(community, source, 0, -1)
   end
+  ForgetReporter(community, source, hash, token)
   return removed
 end
 
@@ -243,6 +284,10 @@ function Aggregate.Expire(today)
         byHash[hash] = nil
         Adjust(community, source, 0, -1)
       end
+      local reporters = ReporterTable(community, source, hash, false)
+      if reporters then
+        for token in pairs(reporters) do ForgetReporter(community, source, hash, token) end
+      end
     end
   end
 end
@@ -252,7 +297,55 @@ function Aggregate.Purge()
   local community = Community()
   if not community then return end
   community.reports = {}
+  community.reporters = {}
   community.tokenCount, community.targetCount = 0, {}
+end
+
+-- Everything one source holds about a target, for the report card, merged over
+-- the given hashes (this season's and the previous one's):
+-- { count = distinct reporters, labels = { id = count },
+--   reporters = { { name =, day =, labels = set } } }.
+-- Only reports inside the window count. reporters is nil for global, which never
+-- knows who sent a report. Returns nil when the source holds nothing.
+function Aggregate.Detail(hashes, source, today)
+  local community = Community()
+  local bySource = community and Reports() and Reports()[source]
+  if not bySource then return nil end
+  local global = Const.SourceGroup[source] == "global"
+  local byToken, labels = {}, {}
+  for _, hash in ipairs(hashes) do
+    local names = (not global) and ReporterTable(community, source, hash, false) or nil
+    for label, tokens in pairs(bySource[hash] or {}) do
+      for token, day in pairs(tokens) do
+        if today - day < Limits.windowDays and day <= today + Limits.futureDays then
+          local entry = byToken[token]
+          if not entry then
+            entry = { day = day, labels = {}, name = names and names[token] }
+            byToken[token] = entry
+          end
+          if day < entry.day then entry.day = day end
+          if not entry.name and names then entry.name = names[token] end
+          if not entry.labels[label] then
+            entry.labels[label] = true
+            labels[label] = (labels[label] or 0) + 1
+          end
+        end
+      end
+    end
+  end
+  if next(byToken) == nil then return nil end
+  local count, reporters = 0, (not global) and {} or nil
+  for _, entry in pairs(byToken) do
+    count = count + 1
+    if reporters then reporters[#reporters + 1] = { name = entry.name, day = entry.day, labels = entry.labels } end
+  end
+  if reporters then
+    table.sort(reporters, function(a, b)
+      if a.day ~= b.day then return a.day > b.day end
+      return (a.name or "") < (b.name or "")
+    end)
+  end
+  return { count = count, labels = labels, reporters = reporters }
 end
 
 -- Tokens and targets held, for tests and the Community tab.

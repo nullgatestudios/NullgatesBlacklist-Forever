@@ -1,4 +1,4 @@
-> **Note:** Blackbook was renamed to **Nullgate's Blacklist - Forever** in 1.0.0-alpha.3 (folder `NullgatesBlacklist-Forever`, saved variable `NullgatesBlacklistDB`, commands `/nbl` and `/blacklist`). This document still uses the old name; the wire names (`BK1`, `BKC`, `BlackbookGl` and the salts) are unchanged on purpose.
+> **Note:** Blackbook was renamed to **Nullgate's Blacklist - Forever** in 1.0.0 (folder `NullgatesBlacklist-Forever`, saved variable `NullgatesBlacklistDB`, commands `/nbl` and `/blacklist`). This document still uses the old name; the wire names (`BK1`, `BKC`, `BlackbookGl` and the salts) are unchanged on purpose. Since 1.0.0, global target hashes use their own salt (`Const.GlobalSeasonSalt`, `Hash.Target(key, season, "global")`), friends and guild reports keep the sending character in `db.community.reporters` (never for global), and `UI/ReportCard.lua` shows `Rules.Card(name)` from the player menu.
 
 # Blackbook addon: design document
 

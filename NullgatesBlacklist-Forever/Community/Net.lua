@@ -6,7 +6,9 @@
 --
 -- Sending is one message at a time with a gap, one pending slot per target, and
 -- is retried a few times. Receiving checks everything and drops silently.
--- The sender of a message is used for the checks and never stored.
+-- The sender of a global message is used for the checks and never stored. For
+-- friends and guild the sending character is kept with the report, so the report
+-- card can show who reported a player (the consent notice says they can see this).
 local _, ns = ...
 
 local Const = ns.Const
@@ -206,11 +208,13 @@ local function Secret()
   return ns.db.community.install.secret
 end
 
-local function CurrentItems()
+-- The reports for one class of destinations; global ones are hashed with their own salt.
+local function CurrentItems(class)
   return Report.Build(Records.All(), {
     shareLabels = Settings.Get("community.shareLabels") or {},
     secret = Secret(),
     now = Net.io.serverTime(),
+    group = Const.SourceGroup[class] or "friends",
   })
 end
 
@@ -266,10 +270,9 @@ end
 -- Queues what changed since the last announcement to every enabled class.
 function Net.Sync()
   if not ns.db or type(ns.db.community) ~= "table" then return end
-  local items
   for _, class in ipairs(CLASSES) do
     if CanSend(class) then
-      items = items or CurrentItems()
+      local items = CurrentItems(class)
       local sent = SentSet(class)
       local current = {}
       for _, item in ipairs(items) do current[item.hash] = item end
@@ -309,7 +312,7 @@ end
 local function Backlog(name)
   if not Consent.Allows("friends", "send") then return end
   local dest = FriendDest(name)
-  for _, item in ipairs(CurrentItems()) do
+  for _, item in ipairs(CurrentItems("friends")) do
     Queue(dest, { kind = "R", hash = item.hash, mask = item.mask, day = item.day, token = item.token })
   end
   Kick()
@@ -337,7 +340,7 @@ end
 -- { hash =, mask =, labels = set, day =, token = } per qualifying own record.
 function Net.Preview()
   local list = {}
-  for _, item in ipairs(CurrentItems()) do
+  for _, item in ipairs(CurrentItems("friends")) do
     list[#list + 1] = { hash = item.hash, mask = item.mask, labels = Const.MaskToLabels(item.mask),
       day = item.day, token = item.token }
   end
@@ -558,7 +561,7 @@ function Net.OnMessage(prefix, message, channel, sender, channelName)
   for index = 1, allowed do
     local item = parsed.items[index]
     if parsed.kind == "R1" then
-      if Aggregate.Add(item.hash, item.mask, item.day, item.token, source) > 0 then changed = true end
+      if Aggregate.Add(item.hash, item.mask, item.day, item.token, source, name) > 0 then changed = true end
     elseif Aggregate.Retract(item.hash, item.token, source) then
       changed = true
     end

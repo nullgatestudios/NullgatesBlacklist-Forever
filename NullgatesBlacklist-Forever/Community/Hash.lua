@@ -57,16 +57,26 @@ function Hash.Day(serverTime)
 end
 
 -- 16 lowercase hex digits for a target key in a season.
-function Hash.Target(targetKey, seasonId)
-  local text = Const.SeasonSalt .. seasonId .. ":" .. targetKey
+-- group is a source group ("friends" for friends and guild, or "global"); global
+-- hashes use their own salt, so the two worlds can't be matched against each other.
+function Hash.Target(targetKey, seasonId, group)
+  local salt = group == "global" and Const.GlobalSeasonSalt or Const.SeasonSalt
+  local text = salt .. seasonId .. ":" .. targetKey
   return string.format("%08x%08x", Fnv32(text, OFFSET_A), Fnv32(text, OFFSET_B))
 end
 
--- The hashes a name can be filed under right now: this season's and the
--- previous one's, because a report may have been made just before a boundary.
-function Hash.Candidates(targetKey, serverTime)
+-- The hashes a name can be filed under right now in one group: this season's and
+-- the previous one's, because a report may have been made just before a boundary.
+function Hash.Candidates(targetKey, serverTime, group)
   local season = Hash.Season(serverTime)
-  return { Hash.Target(targetKey, season), Hash.Target(targetKey, season - 1) }
+  return { Hash.Target(targetKey, season, group), Hash.Target(targetKey, season - 1, group) }
+end
+
+-- The candidates of both groups (for data kept about a name in every group).
+function Hash.AllCandidates(targetKey, serverTime)
+  local list = Hash.Candidates(targetKey, serverTime, "friends")
+  for _, hash in ipairs(Hash.Candidates(targetKey, serverTime, "global")) do list[#list + 1] = hash end
+  return list
 end
 
 -- 8 hex digits, stable for one install and target, unlinkable across targets.

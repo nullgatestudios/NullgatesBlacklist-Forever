@@ -1460,6 +1460,12 @@ menuHooks.MENU_UNIT_TARGET(nil, root, { name = "Menu Target-Realm" })
 Equals(entries[2], ns.L.CTX_TITLE, "the menu hook adds the Nullgate's Blacklist title")
 Equals(entries[3], ns.L.CTX_IGNORE, "the menu hook offers Ignore for a new player")
 
+-- The report card opens from the menu and fills its window.
+Equals(entries[#entries], ns.L.CTX_CARD, "the menu ends with the report card")
+Check(ns.ReportCard.Open("Menu Target-Realm"), "the report card opens")
+Check(_G.CurrentNullgateBlacklistReportCard ~= nil and _G.CurrentNullgateBlacklistReportCard:IsShown(), "its window is shown")
+_G.CurrentNullgateBlacklistReportCard:Hide()
+
 -- --- Summary -------------------------------------------------------------------
 
 io.write(string.format("smoke: %d checks, %d failure(s)\n", checks, failures))
