@@ -15,7 +15,7 @@ Ignore someone and their chat disappears, and their party invites, guild invites
 - **Share Lists**: Turn your list into a code to share, and import other players' lists. You decide what each reason means for you.
 - **Community Reports (optional)**: Share your Ignore entries with friends and your guild, and receive theirs. Nothing is shared until you read a short notice and switch it on.
 - **Global Channel (optional)**: Pool reports with every Nullgate's Blacklist player who joins. Global reports are anonymous and need many reporters before they count.
-- **9 Languages**: every language the game client runs in. Switch at any time; it changes at once.
+- **10 Languages**: every language the game client runs in. Switch at any time; it changes at once.
 
 ---
 
@@ -70,7 +70,7 @@ Reports that haven't reached the first tier yet still appear, marked as such, so
 - **Show a notice** when something is blocked.
 - **Automatic reply** to whispers from ignored players: off, short, or with reasons. Each player gets one reply per session, never your comment.
 - **Minimap button** on or off.
-- **Language**: automatic or any of the 9 available.
+- **Language**: automatic or any of the 10 available.
 
 ---
 
@@ -85,6 +85,6 @@ Reports that haven't reached the first tier yet still appear, marked as such, so
 
 ## Languages
 
-English, Deutsch, Español, Français, Italiano, Português, Русский, 한국어 and 简体中文 (Traditional Chinese game clients use Simplified Chinese).
+English, Deutsch, Español, Français, Italiano, Português, Русский, 한국어, 简体中文 and 繁體中文.
 
 The translations other than English and German were made with machine assistance, so some wording may not be quite right. If you'd like to help improve your language, please send a message here on CurseForge. Thank you!

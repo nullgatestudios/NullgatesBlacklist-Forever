@@ -350,7 +350,7 @@ Run("bogus")
 Contains(LastPrinted(), string.format(ns.L.MSG_UNKNOWN_COMMAND, "bogus"), "unknown command")
 
 Run("lang xx")
-Contains(LastPrinted(), "auto, en, zh, es, fr, pt, ru, de, ko, it", "an invalid language is rejected and every choice is listed")
+Contains(LastPrinted(), "auto, en, zh, zhtw, es, fr, pt, ru, de, ko, it", "an invalid language is rejected and every choice is listed")
 Run("lang en")
 Equals(ns.Settings.Get("language"), "en", "language stored")
 Equals(ns.L, ns.Locale.Tables.en, "the language changes at once, without /reload")

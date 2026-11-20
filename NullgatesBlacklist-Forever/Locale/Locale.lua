@@ -18,7 +18,7 @@ local hooks = {}
 -- Client locale -> language code. Only codes that are registered are used.
 local CLIENT = {
   enUS = "en", enGB = "en", deDE = "de", frFR = "fr", esES = "es", esMX = "es",
-  ptBR = "pt", ptPT = "pt", ruRU = "ru", koKR = "ko", zhCN = "zh", zhTW = "zh",
+  ptBR = "pt", ptPT = "pt", ruRU = "ru", koKR = "ko", zhCN = "zh", zhTW = "zhtw",
   itIT = "it",
 }
 

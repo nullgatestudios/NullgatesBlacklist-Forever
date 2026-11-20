@@ -10,6 +10,7 @@
 Locale/Locale.lua
 Locale/enUS.lua
 Locale/zhCN.lua
+Locale/zhTW.lua
 Locale/esES.lua
 Locale/frFR.lua
 Locale/ptBR.lua

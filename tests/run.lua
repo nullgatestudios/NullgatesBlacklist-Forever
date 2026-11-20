@@ -3248,7 +3248,7 @@ end)
 -- --- Localization: every language the game client runs in, each complete and well formed ---------------------------------
 
 Group("All languages", function()
-  local EXPECTED = { "en", "zh", "es", "fr", "pt", "ru", "de", "ko", "it" }
+  local EXPECTED = { "en", "zh", "zhtw", "es", "fr", "pt", "ru", "de", "ko", "it" }
 
   -- The language files in the order the TOC loads them.
   local toc = assert(io.open(root .. "/NullgatesBlacklist-Forever/NullgatesBlacklist-Forever.toc", "rb"))
@@ -3258,7 +3258,7 @@ Group("All languages", function()
   for file in tocText:gmatch("(Locale/[%w]+%.lua)") do
     if file ~= "Locale/Locale.lua" then files[#files + 1] = file end
   end
-  EQ(#files, 9, "the TOC loads nine language files")
+  EQ(#files, 10, "the TOC loads ten language files")
 
   -- Load the whole set into a table of its own, exactly as the client does.
   local all = {}
@@ -3331,14 +3331,14 @@ Group("All languages", function()
     EQ(all.Locale.Resolve("auto"), expected, "a " .. client .. " client gets " .. expected)
   end
   GetLocale = function() return "zhTW" end
-  EQ(all.Locale.Resolve("auto"), "zh", "a Traditional Chinese client gets Simplified Chinese")
+  EQ(all.Locale.Resolve("auto"), "zhtw", "a Traditional Chinese client gets Traditional Chinese")
   GetLocale = function() return "deDE" end
   EQ(all.Locale.Resolve("ja"), "de", "a saved language that is no longer offered follows the client")
   GetLocale = saved
   EQ(all.Locale.Resolve("ko"), "ko", "every language can be chosen by hand")
 
   -- A language is only as complete as its text: any gap falls back to English.
-  EQ(#all.Locale.List(), 9, "the picker offers nine languages")
+  EQ(#all.Locale.List(), 10, "the picker offers ten languages")
 end)
 
 -- --- Global channel: the envelope (section 8.10) ------------------------------------------------------------
