@@ -6,6 +6,8 @@
 ## X-Curse-Project-ID: 1811465
 ## IconTexture: Interface/AddOns/NullgatesBlacklist-Forever/icon.tga
 ## SavedVariables: NullgatesBlacklistDB
+## X-License: Restricted - Source Available (All Rights Reserved, No Derivatives)
+## X-Website: https://github.com/nullgatestudios/NullgatesBlacklist-Forever
 
 Locale/Locale.lua
 Locale/enUS.lua
