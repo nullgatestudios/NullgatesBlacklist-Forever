@@ -3,6 +3,8 @@
 All notable changes to Nullgate's Blacklist (formerly Blackbook) are listed here. The format follows Keep a Changelog and the project uses Semantic Versioning.
 
 ## [Unreleased]
+### Changed
+- **Languages:** only the languages the game client runs in are offered now: English, German, Spanish, French, Italian, Portuguese, Russian, Korean and Chinese. Indonesian, Japanese, Turkish, Vietnamese, Polish and Ukrainian were removed. If you had picked one of them, the addon now follows your game's language.
 
 ## [1.0.0] - 2026-11-18
 ### Changed

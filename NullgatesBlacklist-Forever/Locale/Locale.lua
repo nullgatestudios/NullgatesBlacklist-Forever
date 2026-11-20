@@ -19,7 +19,7 @@ local hooks = {}
 local CLIENT = {
   enUS = "en", enGB = "en", deDE = "de", frFR = "fr", esES = "es", esMX = "es",
   ptBR = "pt", ptPT = "pt", ruRU = "ru", koKR = "ko", zhCN = "zh", zhTW = "zh",
-  itIT = "it", jaJP = "ja",
+  itIT = "it",
 }
 
 -- Called by every language file.
@@ -35,15 +35,16 @@ function Locale.IsValid(choice)
   return choice == "auto" or (type(choice) == "string" and Locale.Tables[choice] ~= nil)
 end
 
--- The language code a saved choice stands for ("auto" follows the client).
+-- The language code a saved choice stands for ("auto" follows the client). A saved
+-- language that is no longer offered also follows the client.
 function Locale.Resolve(choice)
-  if choice == "auto" or choice == nil then
+  if choice == "auto" or choice == nil or not Locale.Tables[choice] then
     local client = "enUS"
     if type(GetLocale) == "function" then client = GetLocale() or client end
     local code = CLIENT[client]
     return (code and Locale.Tables[code]) and code or "en"
   end
-  return Locale.Tables[choice] and choice or "en"
+  return choice
 end
 
 -- The languages as { code =, name = }, English first.

@@ -3245,10 +3245,10 @@ Group("Game-style widgets", function()
   CreateFrame = savedCreate
 end)
 
--- --- Localization: all fifteen languages, each complete and well formed ---------------------------------
+-- --- Localization: every language the game client runs in, each complete and well formed ---------------------------------
 
 Group("All languages", function()
-  local EXPECTED = { "en", "zh", "es", "fr", "pt", "ru", "id", "de", "ja", "tr", "vi", "ko", "it", "pl", "uk" }
+  local EXPECTED = { "en", "zh", "es", "fr", "pt", "ru", "de", "ko", "it" }
 
   -- The language files in the order the TOC loads them.
   local toc = assert(io.open(root .. "/NullgatesBlacklist-Forever/NullgatesBlacklist-Forever.toc", "rb"))
@@ -3258,7 +3258,7 @@ Group("All languages", function()
   for file in tocText:gmatch("(Locale/[%w]+%.lua)") do
     if file ~= "Locale/Locale.lua" then files[#files + 1] = file end
   end
-  EQ(#files, 15, "the TOC loads fifteen language files")
+  EQ(#files, 9, "the TOC loads nine language files")
 
   -- Load the whole set into a table of its own, exactly as the client does.
   local all = {}
@@ -3330,13 +3330,15 @@ Group("All languages", function()
     GetLocale = function() return client end
     EQ(all.Locale.Resolve("auto"), expected, "a " .. client .. " client gets " .. expected)
   end
-  GetLocale = function() return "plPL" end
-  EQ(all.Locale.Resolve("auto"), "en", "a client language with no WoW locale of its own is chosen by hand, English until then")
+  GetLocale = function() return "zhTW" end
+  EQ(all.Locale.Resolve("auto"), "zh", "a Traditional Chinese client gets Simplified Chinese")
+  GetLocale = function() return "deDE" end
+  EQ(all.Locale.Resolve("ja"), "de", "a saved language that is no longer offered follows the client")
   GetLocale = saved
-  EQ(all.Locale.Resolve("tr"), "tr", "every language can be chosen by hand")
+  EQ(all.Locale.Resolve("ko"), "ko", "every language can be chosen by hand")
 
   -- A language is only as complete as its text: any gap falls back to English.
-  EQ(#all.Locale.List(), 15, "the picker offers fifteen languages")
+  EQ(#all.Locale.List(), 9, "the picker offers nine languages")
 end)
 
 -- --- Global channel: the envelope (section 8.10) ------------------------------------------------------------

@@ -14,15 +14,9 @@ Locale/esES.lua
 Locale/frFR.lua
 Locale/ptBR.lua
 Locale/ruRU.lua
-Locale/idID.lua
 Locale/deDE.lua
-Locale/jaJP.lua
-Locale/trTR.lua
-Locale/viVN.lua
 Locale/koKR.lua
 Locale/itIT.lua
-Locale/plPL.lua
-Locale/ukUA.lua
 Core/Const.lua
 Core/Events.lua
 Core/Safe.lua
