@@ -83,8 +83,19 @@ Reports that haven't reached the first tier yet still appear, marked as such, so
 
 ---
 
-## Languages
+## Supported Languages
 
-English, Deutsch, Español, Français, Italiano, Português, Русский, 한국어, 简体中文 and 繁體中文.
+All 10 languages the game client runs in:
 
-The translations other than English and German were made with machine assistance, so some wording may not be quite right. If you'd like to help improve your language, please send a message here on CurseForge. Thank you!
+- English
+- Deutsch (German)
+- Español (Spanish)
+- Français (French)
+- Italiano (Italian)
+- Português do Brasil (Brazilian Portuguese)
+- Русский (Russian)
+- 한국어 (Korean)
+- 简体中文 (Simplified Chinese)
+- 繁體中文 (Traditional Chinese)
+
+The addon uses your game's language automatically; Mexican Spanish clients get Spanish. You can switch at any time with `/nbl lang` or in the settings, and it changes at once. The translations were made with machine assistance, so some wording may not be quite right. Corrections are welcome: send a message here on CurseForge.
