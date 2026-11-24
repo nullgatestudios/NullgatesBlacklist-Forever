@@ -275,5 +275,9 @@ ns.Locale.Register("ko", "한국어", setmetatable({
   SAMPLE_AUTHOR = "어떤 플레이어",
   HELP_TESTMODE = "/nbl test mode - 테스트 모드를 켜거나 꺼서 예시 툴팁 보기",
   CHECK_CHANNEL = "사용자 지정 채널 (전체 공유)",
+  REPORT_TITLE = "버그 보고",
+  REPORT_SELECT_ALL = "모두 선택",
+  REPORT_SELECT_LINK = "링크 선택",
+  REPORT_HELP = "Ctrl+C를 눌러 이 보고서를 복사한 다음, 아래 링크의 새 보고서에 붙여 넣고 무슨 일이 있었는지 간단히 적어 주세요.",
   HELP_HELP = "/nbl help - 이 도움말 표시",
 }, { __index = ns.Locale.Base }))

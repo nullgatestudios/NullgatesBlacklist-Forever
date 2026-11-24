@@ -275,5 +275,9 @@ ns.Locale.Register("ru", "Русский", setmetatable({
   SAMPLE_AUTHOR = "Некий игрок",
   HELP_TESTMODE = "/nbl test mode - включить или выключить тестовый режим для просмотра примеров подсказок",
   CHECK_CHANNEL = "Пользовательские каналы (общий обмен)",
+  REPORT_TITLE = "Отчёт об ошибке",
+  REPORT_SELECT_ALL = "Выделить всё",
+  REPORT_SELECT_LINK = "Выделить ссылку",
+  REPORT_HELP = "Нажмите Ctrl+C, чтобы скопировать этот отчёт, затем вставьте его в новый отчёт по ссылке ниже и коротко опишите, что произошло.",
   HELP_HELP = "/nbl help - показать этот текст",
 }, { __index = ns.Locale.Base }))

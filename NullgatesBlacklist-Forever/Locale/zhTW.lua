@@ -276,5 +276,9 @@ ns.Locale.Register("zhtw", "繁體中文", setmetatable({
   SAMPLE_AUTHOR = "某位玩家",
   HELP_TESTMODE = "/nbl test mode - 開啟或關閉測試模式以檢視示例滑鼠提示",
   CHECK_CHANNEL = "自定義頻道（全域性共享）",
+  REPORT_TITLE = "錯誤回報",
+  REPORT_SELECT_ALL = "全選",
+  REPORT_SELECT_LINK = "選取連結",
+  REPORT_HELP = "按 Ctrl+C 複製這份報告，然後在下方連結中新增回報並貼上，再簡單說明發生了什麼。",
   HELP_HELP = "/nbl help - 顯示此文字",
 }, { __index = ns.Locale.Base }))

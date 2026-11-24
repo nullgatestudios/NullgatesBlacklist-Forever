@@ -275,5 +275,9 @@ ns.Locale.Register("zh", "简体中文", setmetatable({
   SAMPLE_AUTHOR = "某位玩家",
   HELP_TESTMODE = "/nbl test mode - 开启或关闭测试模式以查看示例鼠标提示",
   CHECK_CHANNEL = "自定义频道（全局共享）",
+  REPORT_TITLE = "错误报告",
+  REPORT_SELECT_ALL = "全选",
+  REPORT_SELECT_LINK = "选中链接",
+  REPORT_HELP = "按 Ctrl+C 复制这份报告，然后在下方链接中新建报告并粘贴，再简单说明发生了什么。",
   HELP_HELP = "/nbl help - 显示此文本",
 }, { __index = ns.Locale.Base }))

@@ -14,6 +14,27 @@ ns.Check = Check
 
 local GREEN, RED, GRAY = "|cff66ff66", "|cffff6666", "|cffaaaaaa"
 
+-- The lines of the last check, for the report window (NullgateReport.lua) every Nullgate addon shares.
+local log = {}
+Check.log = log
+
+local function Say(text)
+  Print(text)
+  log[#log + 1] = text
+  if NullgateReport then NullgateReport.Update("blacklist") end
+end
+
+-- Opens the shared report window with the check's lines, ready to copy and paste into the
+-- report form on our website.
+function Check.ShowReport()
+  return NullgateReport.Show({
+    slug = "blacklist", name = "Nullgate's Blacklist", addon = "NullgatesBlacklist-Forever", command = "/nbl check",
+    lines = log,
+    title = Text("REPORT_TITLE"), help = Text("REPORT_HELP"),
+    selectAll = Text("REPORT_SELECT_ALL"), selectLink = Text("REPORT_SELECT_LINK"),
+  })
+end
+
 local function Has(value) return type(value) == "function" end
 
 -- A frame of this template can be created in this client (and is thrown away).
@@ -80,7 +101,7 @@ function Check.Features()
       verdict = RED .. Text("CHECK_MISSING") .. "|r"
       missing = missing + 1
     end
-    Print(string.format(Text("CHECK_LINE"), Text(label), verdict))
+    Say(string.format(Text("CHECK_LINE"), Text(label), verdict))
   end
   return missing
 end
@@ -88,15 +109,17 @@ end
 -- The whole command: the feature list, then the loopback test of the sharing
 -- connection, whose result is printed when it is known.
 function Check.Run()
-  Print(Text("CHECK_HEADER"))
+  for i = #log, 1, -1 do log[i] = nil end
+  Say(Text("CHECK_HEADER"))
   Check.Features()
-  Print(Text("CHECK_LOOPBACK_RUN"))
+  Say(Text("CHECK_LOOPBACK_RUN"))
   ns.Net.SelfTest(function(ok, reason)
     if ok then
-      Print(GREEN .. Text("CHECK_LOOPBACK_OK") .. "|r")
+      Say(GREEN .. Text("CHECK_LOOPBACK_OK") .. "|r")
     else
       local why = Text(reason == "refused" and "CHECK_REFUSED" or "CHECK_NOECHO")
-      Print(RED .. string.format(Text("CHECK_LOOPBACK_FAIL"), why) .. "|r")
+      Say(RED .. string.format(Text("CHECK_LOOPBACK_FAIL"), why) .. "|r")
     end
   end)
+  Check.ShowReport()
 end

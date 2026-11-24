@@ -317,4 +317,8 @@ ns.Locale.Register("de", "Deutsch", setmetatable({
   SAMPLE_AUTHOR = "Ein Spieler",
   HELP_TESTMODE = "/nbl test mode - Testmodus ein- oder ausschalten, um Beispiel-Tooltips zu sehen",
   CHECK_CHANNEL = "Eigene Kanäle (globales Teilen)",
+  REPORT_TITLE = "Fehlerbericht",
+  REPORT_SELECT_ALL = "Alles markieren",
+  REPORT_SELECT_LINK = "Link markieren",
+  REPORT_HELP = "Drücke Strg+C, um diesen Bericht zu kopieren, und füge ihn dann unter dem Link unten in einen neuen Bericht ein, mit ein paar Worten dazu, was passiert ist.",
 }, { __index = ns.Locale.Base }))

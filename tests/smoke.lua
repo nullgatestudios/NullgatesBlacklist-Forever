@@ -1468,6 +1468,16 @@ _G.CurrentNullgateBlacklistReportCard:Hide()
 
 -- --- Summary -------------------------------------------------------------------
 
+-- /nbl check opens the report window every Nullgate addon shares, with the check's lines.
+Run("check")
+do
+  local w = NullgateReportWindow
+  Check(w ~= nil and w:IsShown(), "check opens the shared report window")
+  Equals(w and w.url, "https://nullgatestudios.com/report?addon=blacklist", "with the Blacklist report link")
+  Check(w and w.text and w.text:find("Addon: blacklist\nNullgate's Blacklist - Forever ", 1, true) == 1, "the report starts with the slug and name")
+  Check(w and w.text and w.text:find(ns.L.CHECK_HEADER, 1, true) ~= nil and not w.text:find("|cff", 1, true), "the report holds the check's lines without colour codes")
+end
+
 io.write(string.format("smoke: %d checks, %d failure(s)\n", checks, failures))
 io.stdout:flush()
 if failures > 0 then os.exit(1) end

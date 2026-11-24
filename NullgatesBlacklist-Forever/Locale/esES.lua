@@ -275,5 +275,9 @@ ns.Locale.Register("es", "Español", setmetatable({
   SAMPLE_AUTHOR = "Un jugador",
   HELP_TESTMODE = "/nbl test mode - activar o desactivar el modo de prueba para ver tooltips de ejemplo",
   CHECK_CHANNEL = "Canales personalizados (uso compartido global)",
+  REPORT_TITLE = "Informe de error",
+  REPORT_SELECT_ALL = "Seleccionar todo",
+  REPORT_SELECT_LINK = "Seleccionar enlace",
+  REPORT_HELP = "Pulsa Ctrl+C para copiar este informe y pégalo en un informe nuevo en el enlace de abajo, con unas palabras sobre lo que pasó.",
   HELP_HELP = "/nbl help - mostrar este texto",
 }, { __index = ns.Locale.Base }))
