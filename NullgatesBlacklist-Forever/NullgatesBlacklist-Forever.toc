@@ -2,7 +2,7 @@
 ## Title: |cff00c0ffNullgate's Blacklist|r - |cffffd100Forever|r
 ## Notes: Personal blocklist with warnings, chat and request enforcement, and list sharing.
 ## Author: Nullgate Studios
-## Version: 1.0.0
+## Version: 1.0.1
 ## X-Curse-Project-ID: 1811465
 ## IconTexture: Interface/AddOns/NullgatesBlacklist-Forever/icon.tga
 ## SavedVariables: NullgatesBlacklistDB
